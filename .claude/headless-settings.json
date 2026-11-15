@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node:*)",
+      "Bash(ffmpeg:*)",
+      "Bash(/usr/bin/ffmpeg:*)",
+      "Bash(ffprobe:*)",
+      "Bash(yt-dlp:*)",
+      "Bash(cp:*)",
+      "Bash(mv:*)",
+      "Bash(mkdir:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(date:*)",
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "Skill"
+    ],
+    "deny": [
+      "Bash(node /home/lucas/.maquina-cortes-gta/ferramentas/publicar/publicar.mjs:*)",
+      "Bash(node ~/.maquina-cortes-gta/ferramentas/publicar/publicar.mjs:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)",
+      "Bash(rm:*)",
+      "Bash(crontab:*)",
+      "Bash(git push:*)",
+      "WebFetch"
+    ]
+  }
+}

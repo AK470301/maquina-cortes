@@ -1,0 +1,36 @@
+# Segredos: só o .env.example (sem valores) vai para o git
+.env
+.env.*
+!.env.example
+
+# Dependências e caches
+node_modules/
+.venv/
+.cache/
+__pycache__/
+
+# Mídia pesada e dados de cada live (VODs, transcrições, renders)
+cortes/
+compilados/
+work/
+render/
+final/
+*.mp4
+*.mkv
+*.webm
+*.mov
+para-postar/*
+!para-postar/.gitkeep
+postados/*
+!postados/.gitkeep
+assets/broll-gta6/*.mp4
+
+# Estado de execução
+fila/
+notificados.json
+postado.json
+postagem.json
+banco-compilado/segmentos.json
+
+# Locais do Claude Code
+.claude/settings.local.json

@@ -1,0 +1,42 @@
+{
+  "modo_revisao_manual": true,
+  "_modo_revisao_manual": "true: cortes de streamer sem autorização (pendente/nao_verificado) são renderizados e aparecem na tabela de publicação marcados SEM AUTORIZAÇÃO; só saem com OK explícito item a item. false: ficam bloqueados.",
+  "publicador": "zernio",
+  "_publicador": "zernio: scripts/publicar.mjs → API da Zernio (ZERNIO_API_KEY no .env; contas TikTok/YouTube conectadas no painel da Zernio). webhook: scripts/publicar.mjs (POST_API_URL/POST_API_KEY no .env). maquina: publicar.mjs/kit do motor de cortes.",
+  "zernio": {
+    "timezone": "America/Sao_Paulo",
+    "tiktok": {
+      "privacy_level": "PUBLIC_TO_EVERYONE",
+      "allow_comment": true,
+      "allow_duet": true,
+      "allow_stitch": true,
+      "commercial_content_type": "none",
+      "draft": false
+    },
+    "youtube": {
+      "visibility": "public",
+      "categoryId": "20",
+      "defaultLanguage": "pt-BR",
+      "defaultAudioLanguage": "pt-BR",
+      "playlistId": ""
+    }
+  },
+  "_zernio": "tiktok.draft: true manda para os rascunhos do TikTok em vez de publicar. youtube.categoryId 20 = Gaming. playlistId vazio = sem playlist.",
+  "agenda": {
+    "horarios": [
+      "12:00",
+      "18:00",
+      "21:00"
+    ],
+    "horario_longo": "20:00",
+    "fuso": "-03:00",
+    "por_dia": {
+      "tiktok": 3,
+      "youtube_short": 3,
+      "youtube_longo": 1
+    },
+    "antecedencia_min": 30,
+    "dias_max": 30
+  },
+  "_agenda": "Itens aprovados sem agendado_para recebem o próximo horário livre (agendar.mjs, chamado pelo publicar.mjs): até por_dia vídeos por plataforma por dia nos horarios (BRT), o compilado no horario_longo; o excedente vai para o dia seguinte. Considera ocupados os posts já agendados na Zernio e os postagem.json do projeto."
+}

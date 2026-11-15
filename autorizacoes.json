@@ -1,0 +1,66 @@
+{
+  "_leia": "status: autorizado (permissão direta; prova em evidencia) | politica_publica_de_clipes (o streamer declarou publicamente que permite cortes) | pendente (pedido enviado) | nao_verificado | proibido (o streamer declarou que NÃO permite; bloqueado sempre, inclusive em modo_revisao_manual). Verificado nas descrições dos canais em 2026-11-15.",
+  "alanzoka": {
+    "status": "proibido",
+    "evidencia": "Descrição de youtube.com/@alanzoka: \"Não autorizo o uso desses vídeos ou qualquer outro das lives em outro canal\"",
+    "data": "2026-11-15",
+    "condicoes": "",
+    "contato": "alanzoka@vandep.ag"
+  },
+  "coringa": {
+    "status": "nao_verificado",
+    "evidencia": "Descrição de youtube.com/@LOUDCoringa não fala de cortes; painel da Twitch não verificado",
+    "data": "2026-11-15",
+    "condicoes": "",
+    "contato": ""
+  },
+  "bistecone": {
+    "status": "nao_verificado",
+    "evidencia": "Descrição de youtube.com/@BisteconeLive cita um canal oficial de cortes (@Cortes Bistecone [OFICIAL]); nenhuma permissão a terceiros publicada",
+    "data": "2026-11-15",
+    "condicoes": "",
+    "contato": ""
+  },
+  "davy-jones": {
+    "status": "nao_verificado",
+    "evidencia": "Descrição de youtube.com/@DavyJonesGTA6 não fala de cortes",
+    "data": "2026-11-15",
+    "condicoes": "",
+    "contato": ""
+  },
+  "flow-games": {
+    "status": "proibido",
+    "evidencia": "Descrição de youtube.com/@FlowGamesPodcast: \"O Flow Games não autoriza o uso de sua imagem, voz, áudio ou cortes sem prévia autorização\"",
+    "data": "2026-11-15",
+    "condicoes": "",
+    "contato": ""
+  },
+  "casimito": {
+    "status": "nao_verificado",
+    "evidencia": "Descrições de @CortesdoCasimitoOFICIAL e @CazeTV não proíbem cortes (a CazéTV indica o próprio canal de cortes @cazetv-cortes); bio da Twitch não verificada",
+    "data": "2026-11-15",
+    "condicoes": "",
+    "contato": ""
+  },
+  "paulinho-o-loko": {
+    "status": "nao_verificado",
+    "evidencia": "Descrição de @PaulinhoLOKOoficial não fala de cortes; bio da Twitch não verificada",
+    "data": "2026-11-15",
+    "condicoes": "",
+    "contato": ""
+  },
+  "luquet4": {
+    "status": "nao_verificado",
+    "evidencia": "Descrição de @LuquEt4 não fala de cortes; bio da Twitch não verificada",
+    "data": "2026-11-15",
+    "condicoes": "",
+    "contato": ""
+  },
+  "gabepeixe": {
+    "status": "nao_verificado",
+    "evidencia": "Descrição de @gabepeixe não proíbe cortes e aponta o canal oficial de cortes @CortesdoGabepeixe; bio da Twitch não verificada",
+    "data": "2026-11-15",
+    "condicoes": "",
+    "contato": ""
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "_leia": "ativo: true entra na coleta. O slug é o mesmo do motor de cortes (paleta em ~/.maquina-cortes-gta/streamers/<slug>.json) e do autorizacoes.json; streamer com status 'proibido' no autorizacoes.json é pulado mesmo ativo. O coletor só aceita VOD de live (YouTube: aba /streams; Twitch: archives) com 50 min ou mais; duracao_minima_min pode subir, não descer. aceitar_sem_termo: true aceita toda VOD do canal na janela (útil na Twitch, cujo título raramente cita o jogo). Canais validados com yt-dlp em 2026-11-15.",
+  "janela_horas": 24,
+  "termos": [
+    "gta 6",
+    "gta vi",
+    "gta6",
+    "gtavi",
+    "grand theft auto vi",
+    "leonida",
+    "vice city",
+    "jason e lucia"
+  ],
+  "duracao_minima_min": 50,
+  "duracao_maxima_h": 14,
+  "itens_por_canal": 8,
+  "max_por_streamer": 2,
+  "streamers": [
+    {
+      "slug": "alanzoka",
+      "nome": "alanzoka",
+      "ativo": false,
+      "_obs": "Desativado: a descrição do canal proíbe uso das lives em outro canal (ver autorizacoes.json). Reative só com autorização por escrito.",
+      "canais": [
+        {
+          "plataforma": "twitch",
+          "url": "https://www.twitch.tv/alanzoka"
+        },
+        {
+          "plataforma": "youtube",
+          "url": "https://www.youtube.com/@alanzoka"
+        }
+      ],
+      "aceitar_sem_termo": false
+    },
+    {
+      "slug": "coringa",
+      "nome": "LOUD Coringa",
+      "ativo": true,
+      "_obs": "Twitch loud_coringa sem VODs de live públicos em 2026-11-15; as lives gravadas estão no YouTube.",
+      "canais": [
+        {
+          "plataforma": "twitch",
+          "url": "https://www.twitch.tv/loud_coringa"
+        },
+        {
+          "plataforma": "youtube",
+          "url": "https://www.youtube.com/@LOUDCoringa"
+        }
+      ],
+      "aceitar_sem_termo": false
+    },
+    {
+      "slug": "bistecone",
+      "nome": "Bistecone",
+      "ativo": true,
+      "_obs": "@Bistecone no YouTube é outra pessoa (Christian Ebbesen). Canais oficiais: @BisteconeLive (gameplay ao vivo) e @bisteconeee (lives IRL).",
+      "canais": [
+        {
+          "plataforma": "twitch",
+          "url": "https://www.twitch.tv/bisteconee"
+        },
+        {
+          "plataforma": "youtube",
+          "url": "https://www.youtube.com/@BisteconeLive"
+        },
+        {
+          "plataforma": "youtube",
+          "url": "https://www.youtube.com/@bisteconeee"
+        }
+      ],
+      "aceitar_sem_termo": false
+    },
+    {
+      "slug": "davy-jones",
+      "nome": "Davy Jones",
+      "ativo": true,
+      "_obs": "@DavyJones não existe (404). @DavyJonesGTA6 é o canal dele, mas não tem aba de lives: hoje o coletor não acha nada aqui. @FlowGamesPodcast removido: proíbe cortes e não lista o Davy Jones entre os apresentadores.",
+      "canais": [
+        {
+          "plataforma": "youtube",
+          "url": "https://www.youtube.com/@DavyJonesGTA6"
+        }
+      ],
+      "aceitar_sem_termo": false
+    },
+    {
+      "slug": "casimito",
+      "nome": "Casimito",
+      "ativo": true,
+      "_obs": "Twitch casimito sem VODs públicos e @casimito não existe no YouTube. @CortesdoCasimitoOFICIAL só tem cortes editados (sem lives): o coletor não acha nada lá. A única fonte de lives é a CazéTV, que transmite futebol com direitos de imagem: o filtro de termos de GTA 6 é o que impede pegar jogo de futebol.",
+      "canais": [
+        {
+          "plataforma": "twitch",
+          "url": "https://www.twitch.tv/casimito"
+        },
+        {
+          "plataforma": "youtube",
+          "url": "https://www.youtube.com/@CortesdoCasimitoOFICIAL"
+        },
+        {
+          "plataforma": "youtube",
+          "url": "https://www.youtube.com/@CazeTV"
+        }
+      ],
+      "aceitar_sem_termo": false
+    },
+    {
+      "slug": "paulinho-o-loko",
+      "nome": "Paulinho o LOKO",
+      "ativo": true,
+      "_obs": "Twitch paulinholokobr e YouTube @PaulinhoLOKOoficial com VODs de live.",
+      "canais": [
+        {
+          "plataforma": "twitch",
+          "url": "https://www.twitch.tv/paulinholokobr"
+        },
+        {
+          "plataforma": "youtube",
+          "url": "https://www.youtube.com/@PaulinhoLOKOoficial"
+        }
+      ],
+      "aceitar_sem_termo": false
+    },
+    {
+      "slug": "luquet4",
+      "nome": "LuquEt4",
+      "ativo": true,
+      "_obs": "Twitch luquet4 e YouTube @LuquEt4 com VODs de live.",
+      "canais": [
+        {
+          "plataforma": "twitch",
+          "url": "https://www.twitch.tv/luquet4"
+        },
+        {
+          "plataforma": "youtube",
+          "url": "https://www.youtube.com/@LuquEt4"
+        }
+      ],
+      "aceitar_sem_termo": false
+    },
+    {
+      "slug": "gabepeixe",
+      "nome": "Gabepeixe",
+      "ativo": true,
+      "_obs": "Twitch gabepeixe sem VODs públicos; as lives gravadas estão no YouTube @gabepeixe. Tem canal oficial de cortes (@CortesdoGabepeixe), que não entra na coleta.",
+      "canais": [
+        {
+          "plataforma": "twitch",
+          "url": "https://www.twitch.tv/gabepeixe"
+        },
+        {
+          "plataforma": "youtube",
+          "url": "https://www.youtube.com/@gabepeixe"
+        }
+      ],
+      "aceitar_sem_termo": false
+    }
+  ]
+}

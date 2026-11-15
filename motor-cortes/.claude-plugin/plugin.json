@@ -1,0 +1,24 @@
+{
+  "name": "maquina-cortes",
+  "version": "2.0.0",
+  "description": "Três skills de cortes verticais para Shorts, uma por tipo de trecho: cortes-papo (quem fala em cima, B-roll embaixo), cortes-gameplay (webcam em cima, jogo embaixo) e cortes-video (tela cheia seguindo a pessoa). Legenda palavra por palavra na paleta do streamer, palavras-chave em destaque, pausas cortadas, volume em −14 LUFS. Edição em Remotion, transcrição local com whisper.cpp.",
+  "author": {
+    "name": "Pedro Cardoso",
+    "url": "https://github.com/pedroxcardoso"
+  },
+  "homepage": "https://github.com/pedroxcardoso/maquina-cortes-gta",
+  "repository": "https://github.com/pedroxcardoso/maquina-cortes-gta",
+  "license": "MIT",
+  "keywords": [
+    "shorts",
+    "cortes",
+    "clips",
+    "gameplay",
+    "podcast",
+    "remotion",
+    "whisper",
+    "legendas",
+    "video",
+    "pt-br"
+  ]
+}
