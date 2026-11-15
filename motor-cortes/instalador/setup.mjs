@@ -179,14 +179,28 @@ if (!s0.ytdlp) {
 }
 
 fs.mkdirSync(HOME, {recursive: true});
-fs.copyFileSync(SELF, path.join(HOME, 'setup.mjs'));
+// instalação por links (ex.: ~/.maquina-cortes-gta/engine -> <repo>/motor): origem e destino são o mesmo lugar e
+// copiar um sobre o outro daria erro (ou zeraria o arquivo). Nesses casos não há nada a sincronizar.
+const real = (p) => {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return null;
+  }
+};
+const mesmoLugar = (a, b) => real(a) !== null && real(a) === real(b);
+if (!mesmoLugar(SELF, path.join(HOME, 'setup.mjs'))) fs.copyFileSync(SELF, path.join(HOME, 'setup.mjs'));
 // guias comuns às três skills e o gerador de efeitos, num lugar fixo
-fs.rmSync(path.join(HOME, 'docs'), {recursive: true, force: true});
-fs.cpSync(path.join(REPO, 'docs'), path.join(HOME, 'docs'), {recursive: true});
-fs.cpSync(path.join(REPO, 'ferramentas'), path.join(HOME, 'ferramentas'), {
-  recursive: true,
-  filter: (f) => !path.relative(REPO, f).includes('__pycache__'),
-});
+if (!mesmoLugar(path.join(REPO, 'docs'), path.join(HOME, 'docs'))) {
+  fs.rmSync(path.join(HOME, 'docs'), {recursive: true, force: true});
+  fs.cpSync(path.join(REPO, 'docs'), path.join(HOME, 'docs'), {recursive: true});
+}
+if (!mesmoLugar(path.join(REPO, 'ferramentas'), path.join(HOME, 'ferramentas'))) {
+  fs.cpSync(path.join(REPO, 'ferramentas'), path.join(HOME, 'ferramentas'), {
+    recursive: true,
+    filter: (f) => !path.relative(REPO, f).includes('__pycache__'),
+  });
+}
 const cfg = readConfig();
 cfg.whisperModel = cfg.whisperModel || 'small';
 cfg.language = cfg.language || 'pt';
@@ -207,7 +221,7 @@ if (!s0.engine) {
 } else {
   // mantém scripts e componentes atualizados sem mexer em node_modules
   for (const d of ['src', 'scripts']) {
-    fs.cpSync(path.join(TEMPLATE, d), path.join(ENGINE, d), {recursive: true});
+    if (!mesmoLugar(path.join(TEMPLATE, d), path.join(ENGINE, d))) fs.cpSync(path.join(TEMPLATE, d), path.join(ENGINE, d), {recursive: true});
   }
 }
 

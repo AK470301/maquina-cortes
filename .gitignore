@@ -34,3 +34,7 @@ banco-compilado/segmentos.json
 
 # Locais do Claude Code
 .claude/settings.local.json
+
+# Backups locais (podem conter o .env)
+*.zip
+backup-*/
