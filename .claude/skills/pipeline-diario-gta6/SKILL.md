@@ -20,7 +20,7 @@ lives do dia ─► preparar (transcrição + trechos.json)
                                                               └─► postagem ─► aprovação ─► publicar
 ```
 
-- `R` = `/home/lucas/Documents/projeto-x` (raiz: `para-postar/` (vídeos esperando o OK), `postados/` (já enviados), `streamers.json`, `autorizacoes.json`, `pipeline.config.json`, `.env`, `assets/`, `fila/`, `banco-compilado/`, `cortes/`, `compilados/`).
+- `R` = a raiz do projeto, isto é, a pasta que contém este `.claude/` (no Windows `C:\Users\Lucas\Documents\maquina-cortes`; no Linux de origem `/home/lucas/Documents/projeto-x`). As skills de estratégia rodam de `R/cortes/<live>/` e por isso chegam à raiz por `../../`. Na raiz: `para-postar/` (vídeos esperando o OK), `postados/` (já enviados), `streamers.json`, `autorizacoes.json`, `pipeline.config.json`, `.env`, `assets/`, `fila/`, `banco-compilado/`, `cortes/`, `compilados/`).
 - `S` = `R/.claude/skills/pipeline-diario-gta6/scripts`.
 - `E` = `~/.maquina-cortes-gta/engine/scripts`.
 
@@ -31,7 +31,7 @@ lives do dia ─► preparar (transcrição + trechos.json)
    - **`modo_revisao_manual`** (`true`/`false`). Em `R/autorizacoes.json`, `autorizado` e `politica_publica_de_clipes` publicam normalmente; `pendente`, `nao_verificado` ou streamer ausente contam como **sem autorização**; `proibido` (o streamer declarou que não permite) é bloqueado sempre, inclusive com revisão manual. Com `true`, os cortes deles seguem o fluxo e aparecem na tabela de publicação marcados **SEM AUTORIZAÇÃO**, e só saem com OK explícito **daquele item**. Com `false`, ficam bloqueados. Antes de pedir esse OK, lembre em uma linha que a revisão manual não substitui a permissão.
    - **`publicador`**: `zernio` (9A, padrão), `webhook` (9A) ou `maquina` (9B).
 3. `R/assets/sfx/impacto.wav` e `whoosh.wav` existem (sons do título de topo e das transições do compilado). `R/assets/broll-gta6/` tem clipes? Se estiver vazia, avise uma vez: sem `bottom.mp4` a metade de baixo dos cortes de papo fica com a câmera desfocada.
-4. Velocidade: o render do Remotion usa `~/.maquina-cortes-gta/config.json` → `render` (`concurrency`, `gl`); os encodes do ffmpeg usam o encoder do `node $S/encoder.mjs` (NVENC → VAAPI → libx264, testado de verdade).
+4. Velocidade: o render do Remotion usa `~/.maquina-cortes-gta/config.json` → `render` (`concurrency`, `gl`); os encodes do ffmpeg usam o encoder do `node $S/encoder.mjs` (NVENC → AMF → QSV → VAAPI → libx264, testado de verdade).
 
 ## 1. Entrada
 
@@ -141,6 +141,8 @@ Siga `~/.maquina-cortes-gta/docs/publicacao.md` com `work/publicacao.json` (`arq
 `node $S/coletar.mjs` lê `R/streamers.json` e procura, nas últimas 24 h, **só VODs de live** (YouTube: aba `/streams` com `was_live`; Twitch: `archives`) com **50 min ou mais** e termos de GTA 6; grava `R/fila/<data>.json`. Streamer com status `proibido` no `autorizacoes.json` é pulado sempre.
 
 **Em produção:** o `crontab` roda `R/rodar-diario.sh --turno 09` e `--turno 19` (log em `R/fila/cron.log`) e, no boot, `@reboot sleep 120 && rodar-diario.sh --repescagem`, que roda se um turno de hoje já passou sem registro em `R/fila/turnos/<data>-<turno>.ok` (gravado só quando a rodada termina bem). O script fixa PATH e HOME, impede duas rodadas ao mesmo tempo (`flock`), chama `coletar.mjs --disparar` (que abre `claude -p` com `--permission-mode dontAsk --settings R/.claude/headless-settings.json`) e, no fim, `notificar-email.mjs`. Com `PIPELINE_HEADLESS=1`, o `publicar.mjs` só aceita `--teste`: **a rodada automática para na tabela de publicação**, e publicar é sempre numa sessão com o usuário. Suspender/retomar o notebook não conta como boot: só desligar e ligar dispara a repescagem.
+
+**No Windows** o equivalente é o `R/rodar-diario.ps1` (mesmos argumentos, mais `--teste` para um ensaio que não grava nada nem chama o Claude), agendado no Agendador de Tarefas na pasta `MaquinaCortes`: `Turno09` (09:00), `Turno19` (19:00) e `Repescagem` (2 min depois de ligar o PC). A trava é o arquivo `R/fila/.rodada.lock` aberto com exclusividade e o log é o mesmo `R/fila/cron.log`.
 
 ## 10. Relatório do dia
 

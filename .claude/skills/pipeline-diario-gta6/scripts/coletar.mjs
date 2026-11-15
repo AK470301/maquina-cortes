@@ -137,10 +137,12 @@ if (disparar && fila.length) {
   const prompt = `Rode a skill pipeline-diario-gta6 com a fila ${saida} (itens com status "pendente"). Vá até a tabela de publicação e pare: não publique nada.`;
   // headless: o que não está liberado em .claude/headless-settings.json é recusado sem perguntar (dontAsk);
   // esse arquivo bloqueia os publicadores, então a rodada automática nunca publica
-  const r = spawnSync(
-    'claude',
-    ['-p', prompt, '--permission-mode', 'dontAsk', '--settings', path.join(RAIZ, '.claude', 'headless-settings.json'), '--output-format', 'text'],
-    {cwd: RAIZ, stdio: 'inherit'},
-  );
+  const opcoes = ['--permission-mode', 'dontAsk', '--settings', path.join(RAIZ, '.claude', 'headless-settings.json'), '--output-format', 'text'];
+  // Windows: o claude do npm é um claude.cmd, que só abre pelo shell; lá o prompt vai pela entrada padrão (o cmd.exe
+  // estragaria as aspas do texto) e os argumentos com espaço vão entre aspas
+  const r =
+    process.platform === 'win32'
+      ? spawnSync(['claude', '-p', ...opcoes.map((a) => (/\s/.test(a) ? `"${a}"` : a))].join(' '), {cwd: RAIZ, shell: true, input: prompt, stdio: ['pipe', 'inherit', 'inherit']})
+      : spawnSync('claude', ['-p', prompt, ...opcoes], {cwd: RAIZ, stdio: 'inherit'});
   process.exit(r.status ?? 1);
 }

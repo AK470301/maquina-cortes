@@ -32,6 +32,9 @@ postado.json
 postagem.json
 banco-compilado/segmentos.json
 
+# Gerado pelo setup.mjs do motor ao instalar o whisper (a instalação aponta para dentro do repositório)
+motor-cortes/motor/scripts/_install-whisper.mjs
+
 # Locais do Claude Code
 .claude/settings.local.json
 

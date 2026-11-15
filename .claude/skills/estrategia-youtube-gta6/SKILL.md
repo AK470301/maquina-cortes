@@ -136,5 +136,5 @@ O compilado usa o vídeo **16:9 original** da live, então não há bloco `edica
 Depois de gravar, valide os Shorts e corrija até passar:
 
 ```bash
-node /home/lucas/Documents/projeto-x/.claude/skills/pipeline-diario-gta6/scripts/plano.mjs validar work/plano-youtube.json
+node ../../.claude/skills/pipeline-diario-gta6/scripts/plano.mjs validar work/plano-youtube.json
 ```

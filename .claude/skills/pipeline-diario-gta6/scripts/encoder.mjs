@@ -1,8 +1,10 @@
 #!/usr/bin/env node
-// Escolhe o encoder H.264 mais rápido que FUNCIONA nesta máquina: NVENC (NVIDIA) → VAAPI (AMD/Intel) → libx264.
+// Escolhe o encoder H.264 mais rápido que FUNCIONA nesta máquina:
+// NVENC (NVIDIA) → AMF (AMD no Windows) → QSV (Intel) → VAAPI (AMD/Intel no Linux) → libx264 (CPU, sempre disponível).
 // Testa de verdade (codifica 1 s) e guarda o resultado em <projeto>/.cache/encoder.json; --testar refaz o teste.
+// Aparecer em `ffmpeg -encoders` não basta: o build lista todos, mas só funciona o da placa que existe na máquina.
 // FFMPEG_HW (ambiente ou .env) aponta um ffmpeg alternativo para o teste de GPU, ex.: /usr/bin/ffmpeg do apt, quando o
-// ffmpeg do PATH é um build estático que não acessa a libva do sistema.
+// ffmpeg do PATH é um build estático que não acessa a libva do sistema. No Windows basta FFMPEG_HW=ffmpeg (o do PATH).
 // Uso como script: node encoder.mjs [--testar]   → imprime {ffmpeg, nome, args}
 // Uso como módulo: import {encoderH264} from './encoder.mjs'; const e = encoderH264(); e.ffmpeg, e.entrada, e.args, e.filtro
 import {spawnSync} from 'node:child_process';
@@ -19,6 +21,8 @@ function candidatos() {
   const lista = [];
   for (const ffmpeg of bins) {
     lista.push({ffmpeg, nome: 'h264_nvenc', entrada: [], filtro: '', args: ['-c:v', 'h264_nvenc', '-preset', 'p5', '-cq', '21', '-b:v', '0']});
+    lista.push({ffmpeg, nome: 'h264_amf', entrada: [], filtro: '', args: ['-c:v', 'h264_amf', '-quality', 'quality', '-rc', 'cqp', '-qp_i', '21', '-qp_p', '21', '-qp_b', '23', '-pix_fmt', 'yuv420p']});
+    lista.push({ffmpeg, nome: 'h264_qsv', entrada: [], filtro: '', args: ['-c:v', 'h264_qsv', '-preset', 'medium', '-global_quality', '21', '-pix_fmt', 'nv12']});
     if (fs.existsSync(DEV))
       lista.push({ffmpeg, nome: 'h264_vaapi', entrada: ['-vaapi_device', DEV], filtro: 'format=nv12,hwupload', args: ['-c:v', 'h264_vaapi', '-qp', '21']});
   }

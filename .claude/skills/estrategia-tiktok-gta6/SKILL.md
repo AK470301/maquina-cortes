@@ -12,7 +12,7 @@ Você lê uma live já transcrita e grava **`work/plano-tiktok.json`**. Quem edi
 Da pasta `./cortes/<slug-da-live>/work/` (preparada pelo `~/.maquina-cortes-gta/docs/preparacao.md`):
 - `captions.json` e a saída de `node ~/.maquina-cortes-gta/engine/scripts/transcript-text.mjs work` (frases com 🔥 e 🔊);
 - `trechos.json` (mapa visual: o que é `gameplay` e o que é `papo`);
-- o slug do streamer e o status de autorização dele em `/home/lucas/Documents/projeto-x/autorizacoes.json`. No plano, `autorizacao` é `autorizado` | `politica_publica_de_clipes` | `nao_verificado` (`pendente` ou streamer ausente viram `nao_verificado`).
+- o slug do streamer e o status de autorização dele em `../../autorizacoes.json`. No plano, `autorizacao` é `autorizado` | `politica_publica_de_clipes` | `nao_verificado` (`pendente` ou streamer ausente viram `nao_verificado`).
 
 ## 2. Classificar cada candidato (define a skill de edição)
 
@@ -72,7 +72,7 @@ Separadamente, a **nota do gancho (0–10)** do `ganchos.md` → `edicao.nota`.
 
 ## 8. Conformidade
 
-1. `autorizacao: nao_verificado` → leia `modo_revisao_manual` em `/home/lucas/Documents/projeto-x/pipeline.config.json`: `false` → `bloqueado_publicacao: true`; `true` → `false`, e o pipeline exige OK manual item a item.
+1. `autorizacao: nao_verificado` → leia `modo_revisao_manual` em `../../pipeline.config.json`: `false` → `bloqueado_publicacao: true`; `true` → `false`, e o pipeline exige OK manual item a item.
 2. Sem narração, a transformação vem do título de topo, do fundo de gameplay, dos cortes de pausa, do zoom e da legenda. Prefira trechos com **opinião ou reação do streamer** (mais originais) a trechos que só repetem informação.
 3. Nada de vazamento, build não oficial ou material sob embargo.
 4. Sem dueto/costura; não reenviar corte já postado por outro canal.
@@ -125,5 +125,5 @@ Separadamente, a **nota do gancho (0–10)** do `ganchos.md` → `edicao.nota`.
 Depois de gravar, valide e corrija até passar:
 
 ```bash
-node /home/lucas/Documents/projeto-x/.claude/skills/pipeline-diario-gta6/scripts/plano.mjs validar work/plano-tiktok.json
+node ../../.claude/skills/pipeline-diario-gta6/scripts/plano.mjs validar work/plano-tiktok.json
 ```

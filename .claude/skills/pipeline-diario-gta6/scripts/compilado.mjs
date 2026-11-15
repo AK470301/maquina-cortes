@@ -35,7 +35,16 @@ if (faltando.length) {
 }
 const enc = encoderH264();
 const W = 1920, H = 1080, FPS = 30, CARTAO = 2;
-const FONTE = ['/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'].find((f) => fs.existsSync(f));
+const FONTES_WIN = path.join(process.env.WINDIR || 'C:\\Windows', 'Fonts');
+const FONTE = [
+  '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+  '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+  path.join(FONTES_WIN, 'arialbd.ttf'),
+  path.join(FONTES_WIN, 'segoeuib.ttf'),
+  path.join(FONTES_WIN, 'arial.ttf'),
+].find((f) => fs.existsSync(f));
+// caminho dentro de um filtro do ffmpeg: no Windows o "C:" e as barras invertidas quebram a leitura das opções
+const noFiltro = (f) => `'${f.replace(/\\/g, '/').replace(/:/g, '\\:')}'`;
 const WHOOSH = path.join(RAIZ, 'assets', 'sfx', 'whoosh.wav');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'compilado-'));
 const dur = (f) => Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', f], {encoding: 'utf8'}).trim());
@@ -68,7 +77,7 @@ const texto = (t, y, size, cor = 'white') => {
     .map((linha, i) => {
       const tf = path.join(tmp, `t${n}-${y}-${i}.txt`);
       fs.writeFileSync(tf, linha);
-      return `,drawtext=fontfile=${FONTE}:textfile=${tf}:fontcolor=${cor}:fontsize=${size}:borderw=4:bordercolor=black:x=(w-text_w)/2:y=${y + i * Math.round(size * 1.25)}`;
+      return `,drawtext=fontfile=${noFiltro(FONTE)}:textfile=${noFiltro(tf)}:fontcolor=${cor}:fontsize=${size}:borderw=4:bordercolor=black:x=(w-text_w)/2:y=${y + i * Math.round(size * 1.25)}`;
     })
     .join('');
 };
@@ -113,7 +122,7 @@ const fe = plano.fechamento;
 cartao(fe.fonte, fe.quadro, {topo: '', titulo: fe.texto || 'E você, o que achou?', contexto: 'Comenta aqui embaixo'});
 
 const lista = path.join(tmp, 'lista.txt');
-fs.writeFileSync(lista, pecas.map((p) => `file '${p}'`).join('\n'));
+fs.writeFileSync(lista, pecas.map((p) => `file '${p.replace(/\\/g, '/')}'`).join('\n'));
 const junto = path.join(tmp, 'junto.mp4');
 execFileSync('ffmpeg', ['-y', '-v', 'error', '-f', 'concat', '-safe', '0', '-i', lista, '-c', 'copy', junto]);
 execFileSync('ffmpeg', ['-y', '-v', 'error', '-i', junto, '-c:v', 'copy', '-af', 'loudnorm=I=-14:TP=-1:LRA=11', ...audio, '-movflags', '+faststart', saida]);
