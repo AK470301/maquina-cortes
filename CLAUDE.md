@@ -33,6 +33,21 @@ node $S/encoder.mjs --testar                      # re-detect fastest H.264 enco
 
 `--so` matches the **full** item id (`tt-01-gasolina-nos-carros`, not `tt-01`).
 
+Live radar (skill `modo-ao-vivo-gta6`, independent of the daily queue and of the 09:00/19:00 tasks):
+
+```bash
+node scripts/radar-ao-vivo.mjs --canais coringa,luquet4 [--duracao 65 --antes 45 --fator 3 --piso 8 --cooldown 90 --max-hora 6]
+node scripts/radar-ao-vivo.mjs --testar-irc <canal>                 # joins the chat for 20 s and counts messages
+node scripts/radar-ao-vivo.mjs --simular <video> [--canal <canal>]  # synthetic-chat detector test + full clip, saved as calibration
+node $S/publicar.mjs cortes/ao-vivo-<canal>/postagem.json --so <id> [--agora]   # --agora: post now instead of the peak slots
+```
+
+## Live radar
+
+`scripts/radar-ao-vivo.mjs` (dependency-free; imports `env.mjs` and `encoder.mjs` from the pipeline skill; needs `streamlink` — on Windows winget puts it in `%LOCALAPPDATA%\Programs\Streamlink\bin`, which the script also probes). Per Twitch channel: an anonymous read-only IRC socket (`irc.chat.twitch.tv:6667`, `NICK justinfan<n>`) and `streamlink twitch.tv/<canal> best -o fila/live-<canal>.ts --retry-streams 30 --force`. Every 10 s the `Detector` compares the last 10 s of chat with the per-10 s average of the previous 5 min; a spike needs ≥ `--fator`× the average, ≥ `--piso` messages, 1 min of history and the per-channel cooldown; at most `--max-hora` clips per channel per hour (default 6, 0 = no cap). On a spike it waits for the post-spike footage, then (one clip at a time, async so the chat keeps being read) cuts from the growing `.ts`, transcribes with the engine's whisper.cpp (`main -ml 1 -sow -oj`, one segment per word), writes an `.ass` (3-word pages, spoken word in the streamer's highlight colour) and renders 1080×1920 with ffmpeg through `encoderH264()` (blurred copy of the video as background, 16:9 window centred, −14 LUFS). Output: `para-postar/LIVE--<canal>--<AAAAMMDD-HHMMSS>.mp4` plus an item in `cortes/ao-vivo-<canal>/postagem.json` (`ao_vivo: true`, `aprovado: false`, `titulo_provisorio: true`, transcript, chat sample, live category), then `notificar-email.mjs`. When streamlink exits (live over) the `.ts` is deleted after pending clips finish and streamlink is relaunched to wait for the next live. Log: `fila/radar.log`.
+
+Rules that tie it to the rest: the radar never publishes; `proibido` channels are refused and non-authorized ones produce `sem_autorizacao: true` items (same per-item OK as the pipeline). In `publicar.mjs`, items with `ao_vivo: true` — or any approved item when called with `--agora` — get `publicar_agora` and an empty `agendado_para`, so `agendar.mjs` skips them and Zernio receives `publishNow`; approval and the `PIPELINE_HEADLESS` guard still apply. `publicar.mjs` also refuses items that still carry `titulo_provisorio` and any `postagem.json` with `calibracao: true` (which `--simular` writes to `cortes/ao-vivo-simulacao-<canal>/`). `para-postar.mjs` leaves `ao_vivo` items where they are (they have no `render/` origin) and deletes the file when one is `descartado`.
+
 ## Architecture
 
 Flow (orchestrated by the `pipeline-diario-gta6` skill, numbered steps in its SKILL.md):

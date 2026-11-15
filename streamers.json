@@ -37,11 +37,11 @@
       "slug": "coringa",
       "nome": "LOUD Coringa",
       "ativo": true,
-      "_obs": "Twitch loud_coringa sem VODs de live públicos em 2026-11-15; as lives gravadas estão no YouTube.",
+      "_obs": "O login da Twitch é coringa (loud_coringa não existe: o chat não responde ao JOIN). Conferido em 2026-11-15: a última VOD de twitch.tv/coringa tem uploader Coringa. As lives gravadas também estão no YouTube.",
       "canais": [
         {
           "plataforma": "twitch",
-          "url": "https://www.twitch.tv/loud_coringa"
+          "url": "https://www.twitch.tv/coringa"
         },
         {
           "plataforma": "youtube",

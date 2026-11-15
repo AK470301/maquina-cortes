@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // Envia os vídeos aprovados para a Zernio (pipeline.config.json → publicador: "zernio", ver zernio.mjs)
 // ou para um webhook/API REST (publicador: "webhook": n8n, Make, Zapier, serviço próprio), que faz a postagem.
-// Uso: node publicar.mjs <postagem.json> [--teste] [--so id1,id2]
+// Uso: node publicar.mjs <postagem.json> [--teste] [--so id1,id2] [--agora]
 //   --teste  valida e mostra o que seria enviado, sem enviar
+//   --agora  publica na hora os aprovados (com --so, só esses), em vez de usar os horários de pico; item com
+//            "ao_vivo": true (radar-ao-vivo.mjs) já sai na hora sem precisar do --agora
 // Ambiente (ou <projeto>/.env): zernio → ZERNIO_API_KEY (+ ZERNIO_TIKTOK_ACCOUNT_ID/ZERNIO_YOUTUBE_ACCOUNT_ID opcionais);
 //   webhook → POST_API_URL (obrigatória), POST_API_KEY (vai como "Authorization: Bearer ...").
 //
@@ -47,6 +49,11 @@ if (process.env.PIPELINE_HEADLESS && !teste) {
 const base = path.dirname(path.resolve(arquivo));
 const doc = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
 const itens = doc.itens || [];
+// lote de teste (calibração do pipeline ou --simular do radar ao vivo): nunca é publicado
+if (doc.calibracao && !teste) {
+  console.error('Este postagem.json é de calibração ("calibracao": true): material de teste não é publicado.');
+  process.exit(1);
+}
 const registroFile = path.join(base, 'postado.json');
 const registro = lerJson(registroFile, {});
 const revisaoManual = !!config().modo_revisao_manual;
@@ -57,8 +64,17 @@ if (!['zernio', 'webhook'].includes(publicador)) {
   process.exit(1);
 }
 
+// corte do radar ao vivo ("ao_vivo": true) ou chamada com --agora: sai na hora, fora da fila dos horários de pico.
+// Continua valendo tudo o que vem depois: só sai com "aprovado": true (e o OK extra de quem não tem autorização).
+const agora = args.includes('--agora');
+for (const it of itens) {
+  if ((so && !so.has(it.id)) || !(agora || it.ao_vivo)) continue;
+  it.publicar_agora = true;
+  it.agendado_para = '';
+}
+
 // aprovados sem horário ganham o próximo horário de pico livre (agendar.mjs); no --teste só mostra a proposta
-const agenda = await preencherHorarios(arquivo, itens, {so, gravar: !teste, registro});
+const agenda =await preencherHorarios(arquivo, itens, {so, gravar: !teste, registro});
 
 const plano = [];
 const erros = [];
@@ -83,6 +99,8 @@ for (const it of itens) {
   if (!it.arquivo || !fs.existsSync(f)) erros.push(`${onde} arquivo não encontrado: ${it.arquivo}`);
   if (!PLATS.includes(it.plataforma)) erros.push(`${onde} plataforma inválida (${PLATS.join(' | ')})`);
   if (!it.titulo) erros.push(`${onde} falta titulo`);
+  // corte do radar ao vivo nasce com um rascunho de título tirado da fala: não vai ao ar sem o título definitivo
+  if (it.titulo_provisorio) erros.push(`${onde} título ainda é o rascunho automático: escreva o definitivo e tire "titulo_provisorio"`);
   if (publicador === 'zernio' && it.plataforma !== 'tiktok' && (it.titulo || '').length > 100) erros.push(`${onde} titulo do YouTube passa de 100 caracteres`);
   if (it.agendado_para) {
     if (!/[+-]\d{2}:\d{2}$|Z$/.test(it.agendado_para) || Number.isNaN(Date.parse(it.agendado_para))) erros.push(`${onde} agendado_para precisa ser ISO com fuso (ex.: 2026-11-16T18:00:00-03:00)`);

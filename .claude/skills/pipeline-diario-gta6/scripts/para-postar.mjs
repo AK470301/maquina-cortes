@@ -10,6 +10,7 @@
 //   para-postar/ (o original continua em render/).
 import fs from 'node:fs';
 import path from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {RAIZ, lerJson} from './env.mjs';
 
 export const PARA_POSTAR = path.join(RAIZ, 'para-postar');
@@ -25,7 +26,15 @@ export function prepararParaPostar(arquivo, {gravar = true} = {}) {
   for (const it of doc.itens || []) {
     if (enviados[`${it.id}:${it.plataforma}`]?.ok) continue;
     const atual = path.resolve(base, it.arquivo || '');
-    const destino = path.join(PARA_POSTAR, `${path.basename(base)}--${it.id}${path.extname(atual) || '.mp4'}`);
+    // corte do radar ao vivo ("ao_vivo": true): já nasce em para-postar/ (LIVE--<canal>--<data>.mp4) e não tem render/
+    if (it.ao_vivo) {
+      if (it.descartado && fs.existsSync(atual) && path.dirname(atual) === PARA_POSTAR) {
+        if (gravar) fs.rmSync(atual);
+        acoes.push({id: it.id, acao: 'removido de para-postar (descartado)'});
+      } else if (!it.descartado) acoes.push({id: it.id, acao: fs.existsSync(atual) ? 'já em para-postar (ao vivo)' : 'erro', ...(fs.existsSync(atual) ? {arquivo: path.relative(RAIZ, atual)} : {motivo: `arquivo não encontrado: ${it.arquivo}`})});
+      continue;
+    }
+    const destino =path.join(PARA_POSTAR, `${path.basename(base)}--${it.id}${path.extname(atual) || '.mp4'}`);
     if (it.descartado) {
       if (fs.existsSync(destino)) {
         if (gravar) fs.rmSync(destino);
@@ -60,7 +69,8 @@ export function moverParaPostados(absoluto) {
   return destino;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname)) {
+// fileURLToPath: no Windows o pathname da URL vem como "/C:/..." e a comparação nunca batia (o script saía sem fazer nada)
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   const arquivo = args.find((a) => !a.startsWith('--'));
   if (!arquivo) {
