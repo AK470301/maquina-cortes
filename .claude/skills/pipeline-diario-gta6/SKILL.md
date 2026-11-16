@@ -56,7 +56,9 @@ Em `R/cortes/<slug-da-live>/` (rode tudo dessa pasta), siga `~/.maquina-cortes-g
 | id | plataforma | tipo → skill | trecho | nota | título de topo | título | bloqueado |
 |---|---|---|---|---|---|---|---|
 
-## 4. Fundo de gameplay (cortes de papo)
+## 4. Fundo de gameplay (só cortes de papo **sobre GTA 6**)
+
+O fundo de `R/assets/broll-gta6/` só entra em corte `papo` com `"sobre_gta6": true` (layout `papo`). Papo sobre outro assunto (GTA RP, react, IRL, resenha) tem `"sobre_gta6": false`, layout `cheia` e fica só com o vídeo da live em 9:16: não misture contextos. Se nenhum corte do plano tiver layout `papo`, pule este passo.
 
 ```bash
 node $E/montar-bottom.mjs R/assets/broll-gta6 work
@@ -76,7 +78,7 @@ O `cuts` já põe em cada clipe o `titulo` de topo, `tituloDur: 4` e os sons del
 
 > Modo pipeline. A live já está preparada em `work/` e o `work/cuts.json` já tem os cortes aprovados (start, end, hook, keywords, turns, titulo, tituloSfx). Pule os passos 0–7. Faça só o passo 8 (enquadrar) e o passo 9 com saída em `render/`: `node ~/.maquina-cortes-gta/engine/scripts/build.mjs work render`. Não mude start/end/keywords/turns/titulo/tituloSfx. As durações deste plano (até 100 s de janela) valem no lugar do limite de 60 s da skill. Não publique.
 
-Depois: `cp work/cuts.json work/cuts-gameplay.json`. Repita com `papo` → **`cortes-papo`** (mesmos argumentos; o fundo já é o `work/bottom.mp4` do passo 4, sem Pexels) e `cp work/cuts.json work/cuts-papo.json`.
+Depois: `cp work/cuts.json work/cuts-gameplay.json`. Repita com `papo` → **`cortes-papo`** (mesmos argumentos; o fundo já é o `work/bottom.mp4` do passo 4, sem Pexels) e `cp work/cuts.json work/cuts-papo.json`. Se houver cortes de layout `cheia` (papo que não é sobre GTA 6), repita com `cheia` → **`cortes-video`** (mesmo texto; o passo de enquadrar ali é medir o `focusTrack` da pessoa; **sem B-roll**) e `cp work/cuts.json work/cuts-cheia.json`.
 
 Para refazer um corte: copie o `cuts-<tipo>.json` de volta para `work/cuts.json`, ajuste e rode `build.mjs work render --so <id>`.
 
@@ -138,11 +140,21 @@ Siga `~/.maquina-cortes-gta/docs/publicacao.md` com `work/publicacao.json` (`arq
 
 ## Rotina diária automática (opcional)
 
-`node $S/coletar.mjs` lê `R/streamers.json` e procura, nas últimas 24 h, **só VODs de live** (YouTube: aba `/streams` com `was_live`; Twitch: `archives`) com **50 min ou mais** e termos de GTA 6; grava `R/fila/<data>.json`. Streamer com status `proibido` no `autorizacoes.json` é pulado sempre.
+`node $S/coletar.mjs` lê `R/streamers.json` e procura, nas últimas 24 h, **só VODs de live** (YouTube: aba `/streams` com `was_live`; Twitch: `archives`; Kick: `/videos`) com **50 min ou mais** e termos de GTA 6; grava `R/fila/<data>.json`. Streamer com status `proibido` no `autorizacoes.json` é pulado sempre.
 
 **Em produção:** o `crontab` roda `R/rodar-diario.sh --turno 09` e `--turno 19` (log em `R/fila/cron.log`) e, no boot, `@reboot sleep 120 && rodar-diario.sh --repescagem`, que roda se um turno de hoje já passou sem registro em `R/fila/turnos/<data>-<turno>.ok` (gravado só quando a rodada termina bem). O script fixa PATH e HOME, impede duas rodadas ao mesmo tempo (`flock`), chama `coletar.mjs --disparar` (que abre `claude -p` com `--permission-mode dontAsk --settings R/.claude/headless-settings.json`) e, no fim, `notificar-email.mjs`. Com `PIPELINE_HEADLESS=1`, o `publicar.mjs` só aceita `--teste`: **a rodada automática para na tabela de publicação**, e publicar é sempre numa sessão com o usuário. Suspender/retomar o notebook não conta como boot: só desligar e ligar dispara a repescagem.
 
 **No Windows** o equivalente é o `R/rodar-diario.ps1` (mesmos argumentos, mais `--teste` para um ensaio que não grava nada nem chama o Claude), agendado no Agendador de Tarefas na pasta `MaquinaCortes`: `Turno09` (09:00), `Turno19` (19:00) e `Repescagem` (2 min depois de ligar o PC). A trava é o arquivo `R/fila/.rodada.lock` aberto com exclusividade e o log é o mesmo `R/fila/cron.log`.
+
+## Modo aquecimento (até 18/11/2026)
+
+Enquanto valer o bloco `aquecimento` do `R/streamers.json` (data `ate`, inclusive; depois o coletor o ignora sozinho e volta o filtro estrito de GTA 6):
+
+- a coleta dispensa o termo de GTA 6 (menos nos canais com `"filtro_estrito": true`, como a CazéTV), põe o **Coringa primeiro** na fila, com janela de 72 h e sem teto de lives por rodada. Processe a fila **na ordem em que ela vem**;
+- cada item da fila traz `"aquecimento": true` e `"gta6_no_titulo"`. Live que não é de GTA 6 (GTA RP, react, IRL, resenha, outro jogo) também rende corte: vale o momento viral. A regra "Vlog/IRL não entra" fica suspensa: trecho só de câmera ou IRL é `papo` com `"sobre_gta6": false` (layout `cheia` → `cortes-video`);
+- VOD muito longa (4 h ou mais): para entregar no mesmo dia, pode baixar e transcrever só uma parte (`--download-sections` do yt-dlp); anote no relatório qual parte foi minerada;
+- B-roll de GTA 6 e hashtags `#gta6`/`#gtavi` só em corte com `"sobre_gta6": true`;
+- o compilado 16:9 continua só com segmentos de GTA 6.
 
 ## 10. Relatório do dia
 
@@ -153,9 +165,9 @@ Mais: segmentos novos no banco por tese, se saiu compilado ou quando sai o próx
 
 ## Regras
 
-- Rota fixa: `gameplay` → `cortes-gameplay`; `papo` → `cortes-papo`. Vlog/IRL não entra.
+- Rota fixa pelo layout: `gameplay` → `cortes-gameplay`; `papo` (fala sobre GTA 6, com B-roll) → `cortes-papo`; `cheia` (papo sobre outro assunto, sem B-roll) → `cortes-video`. Vlog/IRL não entra fora do modo aquecimento.
 - Nunca publique sem o OK da tabela. Corte sem autorização: bloqueado, ou (com `modo_revisao_manual`) só com OK nominal do item.
 - Música licenciada audível = trecho descartado (o motor não separa a trilha).
-- B-roll só de `R/assets/broll-gta6/` (gameplay próprio ou licenciado); nada de Pexels nem trailer oficial no fundo.
+- B-roll só de `R/assets/broll-gta6/` (gameplay próprio ou licenciado); nada de Pexels nem trailer oficial no fundo. E só quando a fala do trecho é sobre GTA 6 (`"sobre_gta6": true`).
 - Chaves e tokens só no ambiente do usuário, nunca no chat ou em arquivo do projeto.
 - Se um corte falhar, siga com os outros e registre no relatório.

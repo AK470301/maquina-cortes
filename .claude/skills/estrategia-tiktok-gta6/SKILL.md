@@ -19,9 +19,12 @@ Da pasta `./cortes/<slug-da-live>/work/` (preparada pelo `~/.maquina-cortes-gta/
 | `tipo` | Quando | `skill_edicao` | `edicao.layout` |
 |---|---|---|---|
 | `gameplay` | o streamer **está jogando**: jogo ativo na tela, com ou sem webcam (descoberta no mapa, bug, missão, reação durante a partida) | `cortes-gameplay` | `gameplay` |
-| `papo` | **sem jogo controlado na tela**: reação a trailer/notícia, debate, teoria, opinião, conversa com o chat | `cortes-papo` | `papo` |
+| `papo` + `"sobre_gta6": true` | **sem jogo controlado na tela** e a fala é **sobre GTA 6**: reação a trailer/notícia, debate, teoria, opinião | `cortes-papo` | `papo` (fundo de gameplay de GTA 6) |
+| `papo` + `"sobre_gta6": false` | sem jogo controlado na tela e a fala é sobre **outro assunto** (GTA RP, react, resenha, IRL, história pessoal) | `cortes-video` | `cheia` (só o vídeo da live em 9:16, **sem B-roll**) |
 
-Use o `trechos.json`; em dúvida, extraia um quadro do meio do trecho e olhe. Vlog/IRL não entra.
+Todo corte leva o campo **`sobre_gta6`** (`true` | `false`): a fala do trecho é especificamente sobre GTA 6? Ele decide o B-roll e as hashtags; o `plano.mjs` recusa o plano sem ele. Em corte `gameplay` o layout não muda (a tela da live aparece embaixo), mas o campo vale para as hashtags. React com o vídeo assistido na tela: classifique como `gameplay` (câmera em cima, a tela embaixo) para não perder o que está sendo reagido.
+
+Use o `trechos.json`; em dúvida, extraia um quadro do meio do trecho e olhe. Vlog/IRL só entra no **modo aquecimento** (item da fila com `"aquecimento": true`, até 18/11/2026), como `papo` com `"sobre_gta6": false`. No aquecimento vale o momento viral de qualquer assunto: nas notas, leia "GTA 6" como "o assunto do corte".
 
 ## 3. Nota de viralidade (0–100)
 
@@ -67,7 +70,7 @@ Separadamente, a **nota do gancho (0–10)** do `ganchos.md` → `edicao.nota`.
 ## 7. Metadados
 
 - `titulo_seo` (vira a legenda): até 90 caracteres, palavra-chave no começo + gancho.
-- `hashtags`: 3–5. Fixas `#gta6` `#gtavi`; mais 1 de tema (`#leonida`, `#vicecity`, `#bugsgta6`) e 1 de formato (`#cortes`). A do streamer o publicador põe.
+- `hashtags`: 3–5. Com `"sobre_gta6": true`: fixas `#gta6` `#gtavi`; mais 1 de tema (`#leonida`, `#vicecity`, `#bugsgta6`) e 1 de formato (`#cortes`). Com `"sobre_gta6": false`: **sem** `#gta6`/`#gtavi` (o `plano.mjs` recusa); use o tema real (`#gtarp`, `#react`, `#resenha`, o jogo da live) e `#cortes`. A do streamer o publicador põe.
 - `palavra_chave_busca`: o termo que aparece no título de topo, no título e na fala.
 
 ## 8. Conformidade

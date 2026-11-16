@@ -2,8 +2,8 @@
 // Valida o plano gerado por estrategia-tiktok-gta6 / estrategia-youtube-gta6 e faz o roteamento para as skills de edição.
 // Uso:
 //   node plano.mjs validar <plano.json> [<plano2.json> ...]           confere campos, durações, rota, sobreposição
-//   node plano.mjs cuts <tipo> <saida-cuts.json> <plano.json> [...]    grava um cuts.json só com os cortes desse tipo
-//                                                                     (tipo = gameplay | papo), pronto para a skill de edição,
+//   node plano.mjs cuts <layout> <saida-cuts.json> <plano.json> [...]  grava um cuts.json só com os cortes desse layout
+//                                                                     (gameplay | papo | cheia), pronto para a skill de edição,
 //                                                                     com o título de topo e os sons dele (assets/sfx)
 // Sai com código 1 se houver erro.
 import fs from 'node:fs';
@@ -11,6 +11,11 @@ import path from 'node:path';
 import {RAIZ, config} from './env.mjs';
 
 const ROTA = {gameplay: 'cortes-gameplay', papo: 'cortes-papo'};
+// Regra do B-roll: o fundo de assets/broll-gta6 (layout "papo") só entra quando a fala do trecho é sobre GTA 6
+// ("sobre_gta6": true). Papo sobre outro assunto (GTA RP, react, IRL, resenha) fica só com o vídeo da live em tela
+// cheia: layout "cheia", editado pela cortes-video. Corte "gameplay" não usa B-roll: mostra a própria tela da live.
+const ROTA_LAYOUT = {gameplay: 'cortes-gameplay', papo: 'cortes-papo', cheia: 'cortes-video'};
+const layoutDe = (c) => (c.tipo === 'gameplay' ? 'gameplay' : c.sobre_gta6 === false ? 'cheia' : 'papo');
 // duração FINAL (depois de o build.mjs tirar as pausas) e janela BRUTA aceita na origem
 const PLATAFORMA = {
   tiktok: {final: [62, 85], bruta: [64, 100], prefixo: 'tt-', hashtags: [3, 5], titulo: 90},
@@ -49,11 +54,13 @@ function validar(arquivos) {
     ids.add(c.id);
     if (!String(c.id).startsWith(P.prefixo)) erros.push(`${onde} id de ${c.plataforma} deve começar com "${P.prefixo}"`);
     if (!ROTA[c.tipo]) erros.push(`${onde} tipo "${c.tipo}" inválido (gameplay | papo)`);
-    else if (c.skill_edicao !== ROTA[c.tipo]) erros.push(`${onde} tipo "${c.tipo}" deve ir para "${ROTA[c.tipo]}", não "${c.skill_edicao}"`);
+    if (typeof c.sobre_gta6 !== 'boolean') erros.push(`${onde} falta "sobre_gta6" (true | false): a fala do trecho é sobre GTA 6? Decide o B-roll e as hashtags`);
     const e = c.edicao || {};
     if (e.id !== c.id) erros.push(`${onde} edicao.id deve ser igual ao id do corte`);
-    const layoutEsperado = c.tipo === 'gameplay' ? 'gameplay' : 'papo';
-    if (e.layout !== layoutEsperado) erros.push(`${onde} edicao.layout deve ser "${layoutEsperado}"`);
+    const layoutEsperado = layoutDe(c);
+    if (e.layout !== layoutEsperado) erros.push(`${onde} edicao.layout deve ser "${layoutEsperado}"${layoutEsperado === 'cheia' ? ' (papo que não é sobre GTA 6 não leva B-roll de GTA 6)' : ''}`);
+    if (ROTA[c.tipo] && c.skill_edicao !== ROTA_LAYOUT[layoutEsperado]) erros.push(`${onde} layout "${layoutEsperado}" deve ir para "${ROTA_LAYOUT[layoutEsperado]}", não "${c.skill_edicao}"`);
+    if (c.sobre_gta6 === false && (c.hashtags || []).some((h) => /^#gta(6|vi)$/i.test(h))) erros.push(`${onde} hashtag de GTA 6 num corte que não é sobre GTA 6`);
     if (e.titulo !== c.titulo_topo_tela) erros.push(`${onde} edicao.titulo deve ser igual a titulo_topo_tela`);
     const ini = seg(c.timestamp_inicio);
     const fim = seg(c.timestamp_fim);
@@ -97,13 +104,13 @@ function validar(arquivos) {
 const [cmd, ...rest] = process.argv.slice(2);
 if (cmd === 'validar') {
   const {cortes, erros, avisos} = validar(rest);
-  const resumo = cortes.map((c) => ({id: c.id, plataforma: c.plataforma, tipo: c.tipo, skill: c.skill_edicao, bruta_s: c.edicao ? +(c.edicao.end - c.edicao.start).toFixed(1) : null, nota: c.nota_viralidade, titulo_topo: c.titulo_topo_tela, bloqueado: !!c.bloqueado_publicacao}));
+  const resumo = cortes.map((c) => ({id: c.id, plataforma: c.plataforma, tipo: c.tipo, skill: c.skill_edicao, layout: c.edicao?.layout, sobre_gta6: c.sobre_gta6, bruta_s: c.edicao ? +(c.edicao.end - c.edicao.start).toFixed(1) : null, nota: c.nota_viralidade, titulo_topo: c.titulo_topo_tela, bloqueado: !!c.bloqueado_publicacao}));
   console.log(JSON.stringify({ok: !erros.length, cortes: resumo, erros, avisos}, null, 2));
   process.exit(erros.length ? 1 : 0);
 } else if (cmd === 'cuts') {
   const [tipo, saida, ...planos] = rest;
-  if (!ROTA[tipo] || !saida || !planos.length) {
-    console.error('Uso: node plano.mjs cuts <gameplay|papo> <saida-cuts.json> <plano.json> [...]');
+  if (!ROTA_LAYOUT[tipo] || !saida || !planos.length) {
+    console.error('Uso: node plano.mjs cuts <gameplay|papo|cheia> <saida-cuts.json> <plano.json> [...]');
     process.exit(1);
   }
   const {cortes, erros} = validar(planos);
@@ -111,7 +118,7 @@ if (cmd === 'validar') {
     console.error(erros.join('\n'));
     process.exit(1);
   }
-  const doTipo = cortes.filter((c) => c.tipo === tipo);
+  const doTipo = cortes.filter((c) => layoutDe(c) === tipo);
   const streamers = [...new Set(doTipo.map((c) => c._streamer))];
   if (streamers.length > 1) {
     console.error(`Cortes de streamers diferentes (${streamers.join(', ')}): um cuts.json por live.`);
@@ -121,7 +128,7 @@ if (cmd === 'validar') {
   const cuts = {layout: tipo, streamer: streamers[0] || null, clips: doTipo.map((c) => ({...c.edicao, tituloDur: 4, tituloSfx: sfx}))};
   fs.mkdirSync(path.dirname(path.resolve(saida)), {recursive: true});
   fs.writeFileSync(saida, JSON.stringify(cuts, null, 2));
-  console.log(JSON.stringify({skill: ROTA[tipo], arquivo: saida, clips: cuts.clips.map((c) => c.id)}));
+  console.log(JSON.stringify({skill: ROTA_LAYOUT[tipo], arquivo: saida, clips: cuts.clips.map((c) => c.id)}));
 } else {
   console.error('Comandos: validar | cuts (veja o cabeçalho do arquivo)');
   process.exit(1);

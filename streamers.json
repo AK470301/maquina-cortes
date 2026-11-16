@@ -1,5 +1,5 @@
 {
-  "_leia": "ativo: true entra na coleta. O slug é o mesmo do motor de cortes (paleta em ~/.maquina-cortes-gta/streamers/<slug>.json) e do autorizacoes.json; streamer com status 'proibido' no autorizacoes.json é pulado mesmo ativo. O coletor só aceita VOD de live (YouTube: aba /streams; Twitch: archives) com 50 min ou mais; duracao_minima_min pode subir, não descer. aceitar_sem_termo: true aceita toda VOD do canal na janela (útil na Twitch, cujo título raramente cita o jogo). Canais validados com yt-dlp em 2026-11-15.",
+  "_leia": "ativo: true entra na coleta. O slug é o mesmo do motor de cortes (paleta em ~/.maquina-cortes-gta/streamers/<slug>.json) e do autorizacoes.json; streamer com status 'proibido' no autorizacoes.json é pulado mesmo ativo. O coletor só aceita VOD de live (YouTube: aba /streams; Twitch: archives; Kick: /videos) com 50 min ou mais; duracao_minima_min pode subir, não descer. aceitar_sem_termo: true aceita toda VOD do canal na janela (útil na Twitch, cujo título raramente cita o jogo). Canais validados com yt-dlp em 2026-11-15.",
   "janela_horas": 24,
   "termos": [
     "gta 6",
@@ -15,6 +15,20 @@
   "duracao_maxima_h": 14,
   "itens_por_canal": 8,
   "max_por_streamer": 2,
+  "aquecimento": {
+    "ate": "2026-11-18",
+    "sem_termo": true,
+    "prioridade": [
+      "coringa"
+    ],
+    "janela_horas": {
+      "coringa": 72
+    },
+    "max_por_streamer": {
+      "coringa": 0
+    }
+  },
+  "_aquecimento": "Modo aquecimento antes do lançamento (16 a 18/11/2026): até a data \"ate\" (inclusive, horário de Brasília) o coletor dispensa o termo de GTA 6 para todos os canais sem \"filtro_estrito\", põe os slugs de \"prioridade\" na frente da fila e usa a janela (horas) e o teto por rodada (0 = sem teto) indicados por slug. Depois da data o bloco é ignorado sozinho e volta o filtro estrito de GTA 6; pode ser apagado a partir de 19/11.",
   "streamers": [
     {
       "slug": "alanzoka",
@@ -37,8 +51,12 @@
       "slug": "coringa",
       "nome": "LOUD Coringa",
       "ativo": true,
-      "_obs": "O login da Twitch é coringa (loud_coringa não existe: o chat não responde ao JOIN). Conferido em 2026-11-15: a última VOD de twitch.tv/coringa tem uploader Coringa. As lives gravadas também estão no YouTube.",
+      "_obs": "Hoje ele transmite na Kick: kick.com/coringa (verificado, 1,1 M de seguidores, bio \"Victor, mais conhecido como Coringadas\", links para o YouTube loudcoringa e o TikTok loud_coringa; lives quase diárias, conferido em 2026-11-16). A Twitch (login coringa; loud_coringa não existe) está parada desde 25/09/2026 e o YouTube @LOUDCoringa (@loudcoringa é o mesmo canal) não tem live desde 21/08/2026; os dois ficam cadastrados para o caso de ele voltar. O radar ao vivo só acompanha a Twitch. Não entram: @loud_coringa, @coringa e @coringalive (não existem); @LivesdoCoringa e @CoringaLives (de terceiros: reprises e vídeos de outros assuntos).",
       "canais": [
+        {
+          "plataforma": "kick",
+          "url": "https://kick.com/coringa"
+        },
         {
           "plataforma": "twitch",
           "url": "https://www.twitch.tv/coringa"
@@ -88,7 +106,7 @@
       "slug": "casimito",
       "nome": "Casimito",
       "ativo": true,
-      "_obs": "Twitch casimito sem VODs públicos e @casimito não existe no YouTube. @CortesdoCasimitoOFICIAL (só cortes editados, sem aba de lives) foi removido em 2026-11-16. A única fonte de lives é a CazéTV, que transmite futebol com direitos de imagem: o filtro de termos de GTA 6 é o que impede pegar jogo de futebol.",
+      "_obs": "Twitch casimito sem VODs públicos e @casimito não existe no YouTube. @CortesdoCasimitoOFICIAL (só cortes editados, sem aba de lives) foi removido em 2026-11-16. A única fonte de lives é a CazéTV, que transmite futebol com direitos de imagem: o filtro de termos de GTA 6 é o que impede pegar jogo de futebol. \"filtro_estrito\": true na CazéTV: exige o termo de GTA 6 mesmo no modo aquecimento.",
       "canais": [
         {
           "plataforma": "twitch",
@@ -96,7 +114,8 @@
         },
         {
           "plataforma": "youtube",
-          "url": "https://www.youtube.com/@CazeTV"
+          "url": "https://www.youtube.com/@CazeTV",
+          "filtro_estrito": true
         }
       ],
       "aceitar_sem_termo": false

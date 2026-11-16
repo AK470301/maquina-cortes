@@ -15,7 +15,7 @@ A mesma da `estrategia-tiktok-gta6` (seção 1). Se o `plano-tiktok.json` desta 
 
 ## 2. Classificar (define a skill de edição)
 
-Igual ao TikTok: `gameplay` (jogo ativo na tela) → `cortes-gameplay`, `edicao.layout: "gameplay"`; `papo` (reação a trailer, debate, teoria, sem jogo controlado) → `cortes-papo`, `edicao.layout: "papo"`.
+Igual ao TikTok (seção 2 de lá, incluindo o campo obrigatório **`sobre_gta6`** e o modo aquecimento): `gameplay` (jogo ativo na tela) → `cortes-gameplay`, `edicao.layout: "gameplay"`; `papo` sobre GTA 6 (reação a trailer, debate, teoria, sem jogo controlado) → `cortes-papo`, `edicao.layout: "papo"`; `papo` sobre outro assunto (`"sobre_gta6": false`) → `cortes-video`, `edicao.layout: "cheia"`, sem B-roll. Segmento de compilado: só de trecho com `"sobre_gta6": true`.
 
 ## 3. Notas (0–100)
 
@@ -40,7 +40,7 @@ Short: nota ≥ 75 e gancho (`ganchos.md`) ≥ 6. Segmento: nota ≥ 65. Descart
 - **`titulo_topo_tela`**: até 6 palavras, primeiros 4 s, com impacto + whoosh (mesmas regras do TikTok, seção 5).
 - **Loop:** prefira terminar numa frase que conversa com o começo.
 - Bloco `edicao` idêntico ao do TikTok (seção 6 da `estrategia-tiktok-gta6`), com `titulo` = `titulo_topo_tela`.
-- **Metadados:** `titulo_seo` até 60 caracteres com a palavra-chave no começo; `hashtags` exatamente 3: `#gta6`, 1 temática e `#shorts`.
+- **Metadados:** `titulo_seo` até 60 caracteres com a palavra-chave no começo; `hashtags` exatamente 3: `#gta6`, 1 temática e `#shorts` (com `"sobre_gta6": false`: 2 do tema real, sem `#gta6`, e `#shorts`).
 
 ## 5. Segmentos de compilado
 

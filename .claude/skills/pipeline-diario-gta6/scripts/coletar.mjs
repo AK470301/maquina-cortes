@@ -6,9 +6,14 @@
 //   --disparar  depois de gravar a fila, chama o Claude Code em modo headless (claude -p) com o pipeline, que roda até
 //               a tabela de publicação e para (publicar continua exigindo OK). As permissões do modo headless são as do
 //               settings.json do projeto.
+// Modo aquecimento (streamers.json → "aquecimento", vale até a data "ate", inclusive, no horário de Brasília; depois
+// disso é ignorado sozinho): "sem_termo": true dispensa o termo de GTA 6 para todos; "prioridade" põe esses slugs na
+// frente da fila; "janela_horas" e "max_por_streamer" trocam a janela e o teto por slug (0 = sem teto).
+// Canal com "filtro_estrito": true (ex.: CazéTV, que transmite futebol) exige o termo de GTA 6 sempre.
+// Cada item da fila leva "gta6_no_titulo" (o termo apareceu de verdade) e "aquecimento", para a estratégia decidir.
 // Só usa dados públicos via yt-dlp (sem login). VOD só para assinantes, privado ou ainda ao vivo é pulado.
 // Filtro estrito: só transmissões gravadas (YouTube: aba /streams com live_status "was_live"; Twitch: só "archives",
-// sem destaques) e com pelo menos 50 min. Vídeo editado e enviado por terceiros não entra (risco de Content ID).
+// sem destaques; Kick: /videos, que só tem VOD de live) e com pelo menos 50 min. Vídeo editado e enviado por terceiros não entra (risco de Content ID).
 import {execFileSync, spawnSync} from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -24,7 +29,8 @@ if (!cfg) {
   process.exit(1);
 }
 const horas = Number(opt('--horas', cfg.janela_horas ?? 24));
-const limite = Date.now() - horas * 3600e3;
+const hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10); // data em Brasília
+const aq = cfg.aquecimento?.ate && hoje <= cfg.aquecimento.ate ? cfg.aquecimento : null;
 const norm = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const termos = (cfg.termos || ['gta 6', 'gta vi', 'gta6']).map(norm);
 const porAba = cfg.itens_por_canal ?? 8;
@@ -44,14 +50,24 @@ function abas(canal) {
   const u = canal.url.replace(/\/+$/, '');
   if (canal.plataforma === 'youtube') return [`${u}/streams`];
   if (canal.plataforma === 'twitch') return [`${u}/videos?filter=archives&sort=time`];
+  if (canal.plataforma === 'kick') return [`${u}/videos`]; // VODs das lives (a Kick só guarda transmissão gravada)
   return [u];
 }
 const quando = (i) => (i.release_timestamp || i.timestamp ? (i.release_timestamp || i.timestamp) * 1000 : i.upload_date ? Date.parse(`${i.upload_date.slice(0, 4)}-${i.upload_date.slice(4, 6)}-${i.upload_date.slice(6, 8)}T12:00:00Z`) : NaN);
 
 const fila = [];
 const avisos = [];
-for (const s of cfg.streamers || []) {
+// aquecimento: os slugs de "prioridade" vão para a frente, na ordem dada
+const ordem = (s) => {
+  const i = (aq?.prioridade || []).indexOf(s.slug);
+  return i < 0 ? 1e9 : i;
+};
+const streamers = [...(cfg.streamers || [])].sort((a, b) => ordem(a) - ordem(b));
+for (const s of streamers) {
   if (!s.ativo) continue;
+  const horasS = Math.max(horas, Number(aq?.janela_horas?.[s.slug]) || 0);
+  const limite = Date.now() - horasS * 3600e3;
+  const maxS = aq?.max_por_streamer?.[s.slug] ?? maxPorStreamer; // 0 = sem teto
   // streamer que proíbe cortes por escrito: nunca entra, nem com modo_revisao_manual
   if (lerJson(path.join(RAIZ, 'autorizacoes.json'), {})[s.slug]?.status === 'proibido') {
     avisos.push(`${s.slug}: status "proibido" no autorizacoes.json; pulado`);
@@ -72,7 +88,8 @@ for (const s of cfg.streamers || []) {
         continue;
       }
       for (const ent of lista) {
-        const url = ent.url || ent.webpage_url;
+        // sem o sufixo interno do yt-dlp (#__youtubedl_smuggle): com ele a consulta do vídeo da Kick volta sem metadados
+        const url = String(ent.url || ent.webpage_url || '').replace(/#__youtubedl_smuggle.*$/, '');
         const chave = `${canal.plataforma}:${ent.id}`;
         if (!url || processados[chave] || fila.some((f) => f.chave === chave)) continue;
         // a data aproximada da listagem, quando existe, evita abrir vídeo antigo (+12 h de folga)
@@ -97,7 +114,12 @@ for (const s of cfg.streamers || []) {
         const texto = norm([info.title, info.description, ...(info.tags || []), ...(info.categories || [])].join(' \n '));
         let achados = termos.filter((k) => texto.includes(k));
         // streamer que só joga GTA 6 (título da VOD da Twitch quase nunca cita o jogo): aceita sem termo
-        if (!achados.length && s.aceitar_sem_termo) achados = ['(aceitar_sem_termo)'];
+        const gta6NoTitulo = achados.length > 0;
+        // canal com filtro_estrito (CazéTV: futebol) nunca entra sem o termo, nem no aquecimento
+        if (!achados.length && !canal.filtro_estrito) {
+          if (s.aceitar_sem_termo) achados = ['(aceitar_sem_termo)'];
+          else if (aq?.sem_termo) achados = ['(aquecimento)'];
+        }
         if (!achados.length) continue;
         doStreamer.push({
           chave,
@@ -108,18 +130,22 @@ for (const s of cfg.streamers || []) {
           publicado_em: new Date(t).toISOString(),
           duracao_s: Math.round(info.duration || 0),
           termos_encontrados: achados,
+          gta6_no_titulo: gta6NoTitulo,
+          ...(aq ? {aquecimento: true} : {}),
           autorizacao: lerJson(path.join(RAIZ, 'autorizacoes.json'), {})[s.slug]?.status || 'nao_verificado',
         });
       }
     }
   }
   // os mais recentes primeiro, até o limite por streamer
-  fila.push(...doStreamer.sort((a, b) => b.publicado_em.localeCompare(a.publicado_em)).slice(0, maxPorStreamer));
+  // a mesma live pode estar na Twitch e no YouTube: fica uma só (mesmo dia e duração parecida), a primeira da lista de canais
+  const unicos = doStreamer.filter((x, i) => !doStreamer.slice(0, i).some((y) => y.plataforma !== x.plataforma && Math.abs(Date.parse(y.publicado_em) - Date.parse(x.publicado_em)) < 6 * 3600e3 && Math.abs(y.duracao_s - x.duracao_s) < 600));
+  const ordenados = unicos.sort((a, b) => b.publicado_em.localeCompare(a.publicado_em));
+  fila.push(...(maxS ? ordenados.slice(0, maxS) : ordenados));
 }
 
-const hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10); // data em Brasília
 const saida = path.join(filaDir, `${hoje}.json`);
-const resumo = {data: hoje, janela_horas: horas, itens: fila.map(({chave, ...x}) => x), avisos};
+const resumo = {data: hoje, janela_horas: horas, ...(aq ? {aquecimento_ate: aq.ate} : {}), itens: fila.map(({chave, ...x}) => x), avisos};
 if (teste) {
   console.log(JSON.stringify({...resumo, gravado: false}, null, 2));
   process.exit(0);
