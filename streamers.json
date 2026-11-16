@@ -75,11 +75,11 @@
       "slug": "davy-jones",
       "nome": "Davy Jones",
       "ativo": true,
-      "_obs": "@DavyJones não existe (404). @DavyJonesGTA6 é o canal dele, mas não tem aba de lives: hoje o coletor não acha nada aqui. @FlowGamesPodcast removido: proíbe cortes e não lista o Davy Jones entre os apresentadores.",
+      "_obs": "@Gameplayrj é o canal principal de lives dele (aba /streams validada em 2026-11-16). @DavyJones não existe (404) e @DavyJonesGTA6 não tem aba de lives. @FlowGamesPodcast removido: proíbe cortes e não lista o Davy Jones entre os apresentadores.",
       "canais": [
         {
           "plataforma": "youtube",
-          "url": "https://www.youtube.com/@DavyJonesGTA6"
+          "url": "https://www.youtube.com/@Gameplayrj"
         }
       ],
       "aceitar_sem_termo": false
@@ -88,15 +88,11 @@
       "slug": "casimito",
       "nome": "Casimito",
       "ativo": true,
-      "_obs": "Twitch casimito sem VODs públicos e @casimito não existe no YouTube. @CortesdoCasimitoOFICIAL só tem cortes editados (sem lives): o coletor não acha nada lá. A única fonte de lives é a CazéTV, que transmite futebol com direitos de imagem: o filtro de termos de GTA 6 é o que impede pegar jogo de futebol.",
+      "_obs": "Twitch casimito sem VODs públicos e @casimito não existe no YouTube. @CortesdoCasimitoOFICIAL (só cortes editados, sem aba de lives) foi removido em 2026-11-16. A única fonte de lives é a CazéTV, que transmite futebol com direitos de imagem: o filtro de termos de GTA 6 é o que impede pegar jogo de futebol.",
       "canais": [
         {
           "plataforma": "twitch",
           "url": "https://www.twitch.tv/casimito"
-        },
-        {
-          "plataforma": "youtube",
-          "url": "https://www.youtube.com/@CortesdoCasimitoOFICIAL"
         },
         {
           "plataforma": "youtube",
