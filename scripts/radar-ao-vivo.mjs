@@ -13,7 +13,16 @@
 //   --fator 3        pico = taxa dos últimos 10 s ≥ fator × média móvel dos 5 min anteriores
 //   --piso 8         mínimo de mensagens em 10 s para valer como pico (chat parado não dispara)
 //   --cooldown 90    segundos entre dois cortes do mesmo canal --max-hora 6   teto de cortes por canal por hora (0 = sem teto)
-//   --qualidade best qualidade pedida ao streamlink         --plataforma tiktok   tiktok | youtube_short
+//   --qualidade 720p60,720p,best  qualidade pedida ao streamlink (a janela 16:9 do corte tem 1080 px de largura: 720p
+//                    basta e gasta metade do disco e da banda de "best")      --plataforma tiktok   tiktok | youtube_short
+//   --max-gb 6       tamanho máximo do .ts de cada canal: passou disso (e sem corte pendente), a gravação recomeça
+//
+// Corte manual: crie o arquivo fila/clipar-<canal> (ou fila/clipar, que vale para todos os canais em gravação) e o
+// radar corta na próxima medição como se fosse um pico, sem olhar o chat nem o teto por hora.
+// Só um radar por vez (trava fila/.radar.lock): dois gravariam o mesmo .ts. Ao ligar, apaga os .ts e as pastas
+// temporárias que sobraram de um radar fechado à força.
+// Fila de render: a transcrição + render de cada corte espera a vez na trava ~/.maquina-cortes-gta/render.lock, a
+// mesma que o build.mjs do motor pega a cada corte de VOD, para as duas coisas não disputarem CPU e GPU.
 //
 // Por canal: um socket TCP em irc.chat.twitch.tv:6667 (NICK justinfan<n>, anônimo, só leitura) e um
 // `streamlink twitch.tv/<canal> <qualidade> -o fila/live-<canal>.ts --retry-streams 30`. Quando a live acaba o
@@ -29,12 +38,12 @@
 // O radar NUNCA publica. O item só sai com o OK do usuário (publicar.mjs), e aí sai na hora por ser "ao_vivo".
 // Autorização: canal de streamer "proibido" no autorizacoes.json é recusado; sem autorização registrada, o item nasce
 // com "sem_autorizacao": true (pede o OK extra). Música licenciada audível no trecho ⇒ descarte o corte na revisão.
-import {spawn} from 'node:child_process';
+import {spawn, spawnSync} from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import {RAIZ, carregarEnv, lerJson} from '../.claude/skills/pipeline-diario-gta6/scripts/env.mjs';
+import {RAIZ, TRAVA_RENDER, atualizarJson, carregarEnv, donoDaTrava, lerJson, travar, travarAsync} from '../.claude/skills/pipeline-diario-gta6/scripts/env.mjs';
 import {encoderH264} from '../.claude/skills/pipeline-diario-gta6/scripts/encoder.mjs';
 
 carregarEnv();
@@ -55,7 +64,8 @@ const CFG = {
   piso: num('--piso', 8),
   cooldown: num('--cooldown', 90),
   maxHora: num('--max-hora', 6),
-  qualidade: opt('--qualidade', 'best'),
+  qualidade: opt('--qualidade', '720p60,720p,best'),
+  maxGb: num('--max-gb', 6),
   plataforma: opt('--plataforma', 'tiktok'),
   janela: 10, // segundos de cada medição
   media: 300, // segundos da média móvel
@@ -286,6 +296,7 @@ let encoder = null;
 async function gerarClipe({dados, fonte, inicio, duracao, quando, pico, chat = [], simulacao = false}) {
   const {canal} = dados;
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'radar-'));
+  let soltarRender = () => {};
   const falhou = (etapa, r) => {
     log(canal, `corte falhou em "${etapa}": ${ultimaLinha(r.err) || `código ${r.status}`}`);
     fs.rmSync(work, {recursive: true, force: true});
@@ -298,6 +309,10 @@ async function gerarClipe({dados, fonte, inicio, duracao, quando, pico, chat = [
     const real = await duracaoDe(path.join(work, 'trecho.mkv'));
     if (!(real >= 20)) return falhou('extrair o trecho', {err: `só ${Number.isFinite(real) ? real.toFixed(1) : '0'} s de vídeo disponíveis`});
 
+    // fila de render: espera a vez se o motor estiver renderizando um corte de VOD (segue sem trava depois de 20 min)
+    soltarRender = await travarAsync(TRAVA_RENDER, {esperaMs: 20 * 60e3, aoEsperar: () => log(canal, 'render ocupado por outro processo: o corte espera a vez')});
+    if (soltarRender.semTrava) log(canal, 'a fila de render não liberou em 20 min: sigo assim mesmo');
+
     // 2) transcrição com o whisper.cpp do motor
     const cfgMotor = lerJson(path.join(HOME, 'config.json'), {});
     const whisper = path.join(HOME, 'whisper.cpp', WIN ? 'main.exe' : 'main');
@@ -307,7 +322,8 @@ async function gerarClipe({dados, fonte, inicio, duracao, quando, pico, chat = [
     else {
       r = await rodar('ffmpeg', ['-y', '-v', 'error', '-i', 'trecho.mkv', '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', 'audio.wav'], {cwd: work, timeoutMs: 2 * 60e3});
       if (r.status !== 0) return falhou('extrair o áudio', r);
-      const threads = String(Math.max(2, Math.min(8, os.cpus().length - 2)));
+      // núcleos físicos (metade dos lógicos), no máximo 6: acima disso o whisper não ganha e sufoca o resto da máquina
+      const threads = String(Math.max(2, Math.min(6, Math.floor(os.cpus().length / 2))));
       r = await rodar(whisper, ['-m', modelo, '-f', 'audio.wav', '-l', cfgMotor.language || 'pt', '-t', threads, '-ml', '1', '-sow', '-oj', '-of', 'legenda', '-np'], {cwd: work, timeoutMs: 10 * 60e3});
       if (r.status !== 0 || !fs.existsSync(path.join(work, 'legenda.json'))) return falhou('transcrever', r);
       palavras = palavrasDoWhisper(JSON.parse(fs.readFileSync(path.join(work, 'legenda.json'), 'utf8')));
@@ -327,6 +343,7 @@ async function gerarClipe({dados, fonte, inicio, duracao, quando, pico, chat = [
       {cwd: work, timeoutMs: 20 * 60e3},
     );
     if (r.status !== 0) return falhou(`render (${encoder.nome})`, r);
+    soltarRender();
 
     // 4) para-postar/ + postagem.json
     const carimbo = carimboDe(quando);
@@ -337,7 +354,6 @@ async function gerarClipe({dados, fonte, inicio, duracao, quando, pico, chat = [
     const pasta = path.join(RAIZ, 'cortes', `${simulacao ? 'ao-vivo-simulacao' : 'ao-vivo'}-${canal}`);
     fs.mkdirSync(pasta, {recursive: true});
     const arquivoPostagem = path.join(pasta, 'postagem.json');
-    const doc = lerJson(arquivoPostagem, {origem: 'radar-ao-vivo', canal, streamer: dados.slug, ...(simulacao ? {calibracao: true} : {}), itens: []});
     const transcricao = palavras.map((w) => w.texto).join(' ');
     const perto = palavras.filter((w) => w.ini >= CFG.antes - 10 && w.ini <= CFG.antes + 6).map((w) => w.texto).join(' ');
     const ehGta = dados.termos.some((t) => `${dados.categoria || ''} ${dados.tituloLive || ''}`.toLowerCase().includes(t));
@@ -365,8 +381,10 @@ async function gerarClipe({dados, fonte, inicio, duracao, quando, pico, chat = [
       chat_amostra: chat.slice(-12),
       transcricao,
     };
-    doc.itens.push(item);
-    fs.writeFileSync(arquivoPostagem, JSON.stringify(doc, null, 2));
+    // relê sob trava e grava por temporário + rename: uma sessão de aprovação pode estar mexendo no mesmo arquivo
+    atualizarJson(arquivoPostagem, {origem: 'radar-ao-vivo', canal, streamer: dados.slug, ...(simulacao ? {calibracao: true} : {}), itens: []}, (doc) => {
+      (doc.itens ||= []).push(item);
+    });
     fs.rmSync(work, {recursive: true, force: true});
     const avisos = [];
     if (CFG.plataforma === 'tiktok' && final < 62) avisos.push(`${final.toFixed(0)} s: abaixo dos 62 s do TikTok Creator Rewards`);
@@ -376,10 +394,12 @@ async function gerarClipe({dados, fonte, inicio, duracao, quando, pico, chat = [
 
     // 5) e-mail (na simulação só mostra o que seria enviado)
     const n = await rodar(process.execPath, [path.join(S, 'notificar-email.mjs'), ...(simulacao ? ['--simular'] : [])], {cwd: RAIZ, timeoutMs: 60e3});
-    log(canal, `e-mail: ${n.status === 0 ? (simulacao ? 'simulado' : ultimaLinha(n.out)) : `falhou (${ultimaLinha(n.err) || ultimaLinha(n.out)})`}`);
+    log(canal, `e-mail: ${n.status === 0 ? (simulacao || process.env.PIPELINE_SEM_EMAIL ? 'simulado' : ultimaLinha(n.out)) : `falhou (${ultimaLinha(n.err) || ultimaLinha(n.out)})`}`);
     return {item, arquivo: destino, postagem: arquivoPostagem, palavras: palavras.length, encoder: encoder.nome, duracao: final};
   } catch (e) {
     return falhou('erro inesperado', {err: e.message});
+  } finally {
+    soltarRender();
   }
 }
 
@@ -450,10 +470,52 @@ async function monitorar(canais) {
     console.error('streamlink não encontrado. Windows: winget install -e --id Streamlink.Streamlink · Linux: pipx install streamlink');
     process.exit(1);
   }
+  // um radar por vez: dois gravariam o mesmo fila/live-<canal>.ts
+  const soltarRadar = travar(path.join(FILA, '.radar.lock'), {esperaMs: 0, velhaMs: Infinity});
+  if (soltarRadar.semTrava) {
+    console.error(`Já existe um radar ligado (processo ${donoDaTrava(path.join(FILA, '.radar.lock'))?.pid ?? '?'}). Feche a outra janela antes de ligar de novo.`);
+    process.exit(1);
+  }
+  process.on('exit', soltarRadar);
+  // sobras de um radar fechado à força (janela fechada no X, queda de energia): .ts antigos e pastas temporárias
+  for (const f of fs.readdirSync(FILA)) {
+    if (!/^live-\w+\.ts$/.test(f)) continue;
+    try {
+      const mb = (fs.statSync(path.join(FILA, f)).size / 1048576).toFixed(0);
+      fs.rmSync(path.join(FILA, f), {force: true});
+      log('radar', `sobra apagada: fila/${f} (${mb} MB)`);
+    } catch (e) {
+      log('radar', `não consegui apagar fila/${f} (${e.code}): há um streamlink antigo ainda gravando? Feche-o no Gerenciador de Tarefas`);
+    }
+  }
+  for (const d of fs.readdirSync(os.tmpdir())) {
+    if (!/^radar-/.test(d)) continue;
+    try {
+      const p = path.join(os.tmpdir(), d);
+      if (Date.now() - fs.statSync(p).mtimeMs > 3600e3) fs.rmSync(p, {recursive: true, force: true});
+    } catch {}
+  }
   encoder = encoderH264();
-  log('radar', `${sl.versao} · encoder ${encoder.nome} · corte de ${CFG.duracao} s (${CFG.antes} s antes do pico) · pico ≥ ${CFG.fator}× a média e ≥ ${CFG.piso} msg/10 s · cooldown ${CFG.cooldown} s · ${CFG.maxHora ? `até ${CFG.maxHora} cortes por canal por hora` : "sem teto de cortes por hora"}`);
+  log('radar', `${sl.versao} · encoder ${encoder.nome} · corte de ${CFG.duracao} s (${CFG.antes} s antes do pico) · pico ≥ ${CFG.fator}× a média e ≥ ${CFG.piso} msg/10 s · cooldown ${CFG.cooldown} s · qualidade ${CFG.qualidade} · ${CFG.maxHora ? `até ${CFG.maxHora} cortes por canal por hora` : "sem teto de cortes por hora"}`);
 
   let parando = false;
+  // no Windows o streamlink.exe pode ser um lançador que abre o Python como filho: matar só o pai deixaria a gravação
+  // rodando para sempre, então vai a árvore inteira
+  const matar = (p) => {
+    if (!p) return;
+    try {
+      if (WIN) spawnSync('taskkill', ['/pid', String(p.pid), '/T', '/F'], {windowsHide: true, timeout: 10e3});
+      else p.kill();
+    } catch {}
+  };
+  const apagarTs = (f) => {
+    try {
+      fs.rmSync(f, {force: true, maxRetries: 10, retryDelay: 200});
+      return true;
+    } catch {
+      return false;
+    }
+  };
   let fila = Promise.resolve(); // um corte por vez (whisper + GPU)
   const sessoes = [];
 
@@ -495,10 +557,12 @@ async function monitorar(canais) {
         while (s.pendentes > 0) await esperar(2000);
         if (fs.existsSync(ts)) {
           const mb = (fs.statSync(ts).size / 1048576).toFixed(0);
-          fs.rmSync(ts, {force: true});
-          log(canal, `${path.basename(ts)} apagado (${mb} MB liberados)`);
+          log(canal, apagarTs(ts) ? `${path.basename(ts)} apagado (${mb} MB liberados)` : `não consegui apagar ${path.basename(ts)} (fica para a próxima vez que o radar ligar)`);
         }
-        if (!parando) setTimeout(gravar, 30e3);
+        // rodízio por tamanho: volta a gravar logo; live encerrada: espera 30 s antes de procurar a próxima
+        const rodizio = s.rodizio;
+        s.rodizio = false;
+        if (!parando) setTimeout(gravar, rodizio ? 2000 : 30e3);
       };
       let terminou = false;
       s.proc.stdout.on('data', (d) => {
@@ -535,15 +599,28 @@ async function monitorar(canais) {
           } catch {}
         });
       }
+      // rodízio: o .ts só cresce; passou do limite e não há corte usando o arquivo, recomeça a gravação do zero
+      if (CFG.maxGb && tamanho > CFG.maxGb * 2 ** 30 && s.pendentes === 0 && s.proc && !s.rodizio) {
+        s.rodizio = true;
+        log(s.canal, `${path.basename(s.ts)} passou de ${CFG.maxGb} GB: recomeçando a gravação (alguns segundos sem gravar)`);
+        matar(s.proc);
+      }
       const r = s.det.avaliar(agora);
+      // corte manual: fila/clipar-<canal> ou fila/clipar (todos os canais)
+      let manual = false;
+      for (const g of [path.join(FILA, `clipar-${s.canal}`), path.join(FILA, 'clipar')]) {
+        if (!fs.existsSync(g)) continue;
+        manual = true;
+        if (g.endsWith(s.canal) || s === sessoes[sessoes.length - 1]) fs.rmSync(g, {force: true});
+      }
       if (volta % 6 === 0) log(s.canal, `chat ${r.atual} msg/10 s (média ${r.mediaMovel}) · ${tamanho ? `gravando, ${(tamanho / 1048576).toFixed(0)} MB` : 'fora do ar'}`);
-      if (!r.pico) continue;
-      if (!s.gravandoDesde || !s.proc) {
-        log(s.canal, `pico no chat (${r.atual} msg/10 s, média ${r.mediaMovel}) mas a live não está sendo gravada: ignorado`);
+      if (!r.pico && !manual) continue;
+      if (!s.gravandoDesde || !s.proc || s.rodizio) {
+        log(s.canal, `${manual ? 'corte manual pedido' : 'pico no chat'} (${r.atual} msg/10 s, média ${r.mediaMovel}) mas a live não está sendo gravada: ignorado`);
         continue;
       }
       s.cortes = s.cortes.filter((t) => t > agora - 3600e3);
-      if (CFG.maxHora && s.cortes.length >= CFG.maxHora) {
+      if (!manual && CFG.maxHora && s.cortes.length >= CFG.maxHora) {
         log(s.canal, `pico ignorado: teto de ${CFG.maxHora} cortes por hora`);
         continue;
       }
@@ -555,12 +632,12 @@ async function monitorar(canais) {
       const inicio = Math.max(0, pos - CFG.antes);
       const quando = new Date(agora);
       const chat = s.chat.filter((m) => m.t > agora - 15e3).map((m) => m.texto);
-      log(s.canal, `PICO: ${r.atual} msg/10 s contra média de ${r.mediaMovel} · corto ${CFG.duracao} s a partir de ${inicio.toFixed(0)} s do arquivo`);
+      log(s.canal, `${manual ? 'CORTE MANUAL' : 'PICO'}: ${r.atual} msg/10 s contra média de ${r.mediaMovel} · corto ${CFG.duracao} s a partir de ${inicio.toFixed(0)} s do arquivo`);
       // espera o resto do trecho (depois do pico) ser gravado e entra na fila de cortes
       setTimeout(
         () => {
           fila = fila
-            .then(() => gerarClipe({dados: s.dados, fonte: s.ts, inicio, duracao: CFG.duracao, quando, pico: {mensagens_10s: r.atual, media_10s: r.mediaMovel}, chat}))
+            .then(() => gerarClipe({dados: s.dados, fonte: s.ts, inicio, duracao: CFG.duracao, quando, pico: {mensagens_10s: r.atual, media_10s: r.mediaMovel, ...(manual ? {manual: true} : {})}, chat}))
             .catch((e) => log(s.canal, `corte falhou: ${e.message}`))
             .finally(() => s.pendentes--);
         },
@@ -578,19 +655,40 @@ async function monitorar(canais) {
     log('radar', 'encerrando (Ctrl+C de novo força a saída)');
     for (const s of sessoes) s.irc.fechar();
     await fila;
-    for (const s of sessoes) s.proc?.kill();
-    await esperar(3000);
-    for (const s of sessoes) fs.rmSync(s.ts, {force: true});
+    for (const s of sessoes) matar(s.proc);
+    await esperar(1500);
+    for (const s of sessoes) apagarTs(s.ts);
     process.exit(0);
   };
   process.on('SIGINT', encerrar);
   process.on('SIGTERM', encerrar);
+  // janela fechada no X (o Windows dá poucos segundos): sem esperar o corte em andamento, encerra as gravações e sai
+  const fechar = () => {
+    parando = true;
+    for (const s of sessoes) matar(s.proc);
+    for (const s of sessoes) apagarTs(s.ts);
+    process.exit(0);
+  };
+  process.on('SIGHUP', fechar);
+  if (WIN) process.on('SIGBREAK', fechar);
+  // parada pedida por arquivo (fila/parar-radar): mesmo efeito do Ctrl+C, para quem não tem a janela à mão
+  setInterval(() => {
+    if (!fs.existsSync(path.join(FILA, 'parar-radar'))) return;
+    fs.rmSync(path.join(FILA, 'parar-radar'), {force: true});
+    encerrar();
+  }, 3000);
+  // qualquer outra saída (erro não tratado): não deixa streamlink órfão gravando
+  process.on('exit', () => sessoes.forEach((s) => matar(s.proc)));
 }
 
 if (args.includes('--testar-irc')) await testarIrc(String(opt('--testar-irc', '')).toLowerCase().replace(/^#/, ''), num('--segundos', 20));
 else if (args.includes('--simular')) await simular(opt('--simular', ''));
 else {
-  const canais = [...new Set(String(opt('--canais', '')).toLowerCase().split(',').map((c) => c.trim().replace(/^#|^https?:\/\/(www\.)?twitch\.tv\//, '')).filter(Boolean))];
+  // sem --canais: os canais da Twitch dos streamers ativos do streamers.json (os "proibido" são recusados adiante)
+  const doProjeto = (lerJson(path.join(RAIZ, 'streamers.json'), {streamers: []}).streamers || [])
+    .filter((s) => s.ativo)
+    .flatMap((s) => (s.canais || []).filter((c) => c.plataforma === 'twitch').map((c) => c.url.replace(/\/+$/, '').split('/').pop()));
+  const canais = [...new Set(String(opt('--canais', doProjeto.join(','))).toLowerCase().split(',').map((c) => c.trim().replace(/^#|^https?:\/\/(www\.)?twitch\.tv\//, '')).filter(Boolean))];
   if (!canais.length || canais.some((c) => !/^\w{2,25}$/.test(c))) {
     console.error('Uso: node scripts/radar-ao-vivo.mjs --canais canal1,canal2 [--duracao 65] [--antes 45] [--fator 3] [--piso 8] [--cooldown 90]\n     node scripts/radar-ao-vivo.mjs --testar-irc <canal> | --simular <video> [--canal <canal>]');
     process.exit(1);

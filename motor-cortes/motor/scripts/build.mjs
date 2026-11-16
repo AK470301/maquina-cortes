@@ -23,6 +23,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {searchImages} from './buscar-imagens.mjs';
 import {searchBroll} from './buscar-broll.mjs';
+import {TRAVA_RENDER, travar} from './trava.mjs';
 
 const args = process.argv.slice(2);
 const soIdx = args.indexOf('--so');
@@ -381,6 +382,9 @@ for (const [idx, clip] of cuts.clips.entries()) {
   console.log(`> Renderizando ${clip.id} (${total.toFixed(1)} s)`);
   // chama o CLI do Remotion direto pelo Node (sem shell): funciona com espaços no caminho, no Windows e fora dele
   const cli = path.join(ENGINE, 'node_modules', '@remotion', 'cli', 'remotion-cli.js');
+  // fila de render da máquina: um render pesado por vez (o radar ao vivo do projeto usa a mesma trava). Pega e solta a
+  // cada corte, para um clipe ao vivo poder entrar entre dois cortes de VOD; depois de 30 min de espera segue sem trava.
+  const soltarRender = travar(TRAVA_RENDER, {esperaMs: 30 * 60e3, aoEsperar: () => console.log('  (render ocupado por outro processo: esperando a vez)')});
   const r = spawnSync(
     process.execPath,
     [
@@ -390,6 +394,7 @@ for (const [idx, clip] of cuts.clips.entries()) {
     ],
     {cwd: ENGINE, stdio: 'inherit'},
   );
+  soltarRender();
   const ok = r.status === 0;
   results.push({id: clip.id, layout: layoutKind, arquivo: out, segundos: Number(total.toFixed(1)), ok, lufsOriginal: ok ? normalizeLoudness(out) : null});
 }

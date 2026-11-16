@@ -11,7 +11,7 @@ import {spawnSync} from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {RAIZ, carregarEnv} from './env.mjs';
+import {RAIZ, carregarEnv, gravarJson} from './env.mjs';
 
 const DEV = '/dev/dri/renderD128';
 const cacheFile = path.join(RAIZ, '.cache', 'encoder.json');
@@ -44,7 +44,7 @@ export function encoderH264({testar = false} = {}) {
   }
   const encoder = candidatos().find(funciona);
   fs.mkdirSync(path.dirname(cacheFile), {recursive: true});
-  fs.writeFileSync(cacheFile, JSON.stringify({ffmpegHw: process.env.FFMPEG_HW || '', testadoEm: new Date().toISOString(), encoder}, null, 2));
+  gravarJson(cacheFile, {ffmpegHw: process.env.FFMPEG_HW || '', testadoEm: new Date().toISOString(), encoder});
   return encoder;
 }
 

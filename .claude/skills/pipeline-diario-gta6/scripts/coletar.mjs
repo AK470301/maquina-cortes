@@ -12,7 +12,7 @@
 import {execFileSync, spawnSync} from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import {RAIZ, lerJson} from './env.mjs';
+import {RAIZ, gravarJson, lerJson} from './env.mjs';
 
 const args = process.argv.slice(2);
 const opt = (k, d) => (args.includes(k) ? args[args.indexOf(k) + 1] : d);
@@ -128,9 +128,9 @@ fs.mkdirSync(filaDir, {recursive: true});
 const anterior = lerJson(saida, {itens: []});
 resumo.itens = [...anterior.itens, ...resumo.itens.filter((i) => !anterior.itens.some((a) => a.url === i.url))];
 resumo.itens.forEach((i) => (i.status ??= 'pendente'));
-fs.writeFileSync(saida, JSON.stringify(resumo, null, 2));
+gravarJson(saida, resumo);
 for (const f of fila) processados[f.chave] = {data: hoje, url: f.url};
-fs.writeFileSync(processadosFile, JSON.stringify(processados, null, 2));
+gravarJson(processadosFile, processados);
 console.log(JSON.stringify({...resumo, gravado: saida}, null, 2));
 
 if (disparar && fila.length) {

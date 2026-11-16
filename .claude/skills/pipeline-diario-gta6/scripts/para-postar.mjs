@@ -11,7 +11,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {RAIZ, lerJson} from './env.mjs';
+import {RAIZ, lerJson, salvarItens} from './env.mjs';
 
 export const PARA_POSTAR = path.join(RAIZ, 'para-postar');
 export const POSTADOS = path.join(RAIZ, 'postados');
@@ -56,7 +56,7 @@ export function prepararParaPostar(arquivo, {gravar = true} = {}) {
     }
     acoes.push({id: it.id, acao: precisaCopiar ? 'copiado' : 'já atualizado', arquivo: path.relative(RAIZ, destino)});
   }
-  if (gravar) fs.writeFileSync(arquivo, JSON.stringify(doc, null, 2));
+  if (gravar) salvarItens(arquivo, doc.itens || []);
   return {acoes};
 }
 

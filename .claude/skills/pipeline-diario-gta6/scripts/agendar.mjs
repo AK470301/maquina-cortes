@@ -10,7 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {RAIZ, carregarEnv, config, lerJson} from './env.mjs';
+import {RAIZ, carregarEnv, config, lerJson, salvarItens} from './env.mjs';
 import {postsAgendadosZernio} from './zernio.mjs';
 
 const PADRAO = {horarios: ['12:00', '18:00', '21:00'], horario_longo: '20:00', fuso: '-03:00', por_dia: {tiktok: 3, youtube_short: 3, youtube_longo: 1}, antecedencia_min: 30, dias_max: 30};
@@ -108,11 +108,7 @@ export async function preencherHorarios(arquivo, itens, {so = null, gravar = tru
     ocup.push({plataforma: it.plataforma, quando: Date.parse(feito), assunto: it.assunto || null});
     atribuidos.push({id: it.id, plataforma: it.plataforma, agendado_para: feito});
   }
-  if (gravar && atribuidos.length) {
-    const doc = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
-    doc.itens = itens;
-    fs.writeFileSync(arquivo, JSON.stringify(doc, null, 2));
-  }
+  if (gravar && atribuidos.length) salvarItens(arquivo, itens);
   return {atribuidos, avisos};
 }
 

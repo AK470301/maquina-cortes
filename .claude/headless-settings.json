@@ -24,6 +24,8 @@
     "deny": [
       "Bash(node /home/lucas/.maquina-cortes-gta/ferramentas/publicar/publicar.mjs:*)",
       "Bash(node ~/.maquina-cortes-gta/ferramentas/publicar/publicar.mjs:*)",
+      "Bash(node motor-cortes/ferramentas/publicar/publicar.mjs:*)",
+      "Bash(node C:/Users/Lucas/.maquina-cortes-gta/ferramentas/publicar/publicar.mjs:*)",
       "Bash(curl:*)",
       "Bash(wget:*)",
       "Bash(rm:*)",

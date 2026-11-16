@@ -2,7 +2,7 @@
 // Avisa por e-mail (API do Resend) quando há vídeos novos esperando aprovação nos postagem.json do projeto.
 // Uso: node notificar-email.mjs            envia só os itens ainda não notificados e grava os ids em <projeto>/notificados.json
 //      node notificar-email.mjs --teste    envia um e-mail de validação (com os pendentes atuais como exemplo), sem gravar nada
-//      node notificar-email.mjs --simular  mostra o que seria enviado, sem enviar nem gravar
+//      node notificar-email.mjs --simular  mostra o que seria enviado, sem enviar nem gravar (ou PIPELINE_SEM_EMAIL=1)
 // Ambiente (<projeto>/.env): RESEND_API_KEY, EMAIL_DESTINO, EMAIL_REMETENTE (padrão onboarding@resend.dev, que só
 // entrega para o e-mail dono da conta do Resend; para outro destino, verifique um domínio no Resend).
 // Pendente = item com aprovado != true, que não foi enviado (postado.json) nem descartado ("descartado": true).
@@ -10,11 +10,12 @@
 import {execFileSync} from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import {RAIZ, carregarEnv, lerJson} from './env.mjs';
+import {RAIZ, atualizarJson, carregarEnv, lerJson} from './env.mjs';
 
 carregarEnv();
 const teste = process.argv.includes('--teste');
-const simular = process.argv.includes('--simular');
+// PIPELINE_SEM_EMAIL=1 no ambiente: tudo vira --simular (ensaios do radar e do pipeline sem mandar e-mail de verdade)
+const simular = process.argv.includes('--simular') || !!process.env.PIPELINE_SEM_EMAIL;
 const controle = path.join(RAIZ, 'notificados.json');
 const notificados = lerJson(controle, {});
 const NOME = {tiktok: 'TikTok', youtube_short: 'YouTube Shorts', youtube_longo: 'YouTube (vídeo longo)'};
@@ -73,7 +74,7 @@ ${aviso ? `<p style="background:#eef6ff;border-left:4px solid #2563eb;padding:10
 <tr style="background:#fafafa;text-align:left"><th style="padding:8px 10px">ID</th><th style="padding:8px 10px">Plataforma</th><th style="padding:8px 10px">Título sugerido</th><th style="padding:8px 10px;text-align:right">Duração</th></tr>
 ${linhas}
 </table>
-<p style="margin:18px 0 0;color:#555;font-size:13px">Para aprovar, abra o Claude Code em <code>projeto-x</code> e diga, por exemplo: <em>"aprovo ${esc(itens[0]?.id || 'tt-01-...')}"</em>. Para assistir: ${pastas || '—'} (só os vídeos que esperam o seu OK; depois de publicados eles vão para <code>${esc(path.join(RAIZ, 'postados'))}/</code>).</p>
+<p style="margin:18px 0 0;color:#555;font-size:13px">Para aprovar, abra o Claude Code em <code>${esc(RAIZ)}</code> e diga, por exemplo: <em>"aprovo ${esc(itens[0]?.id || 'tt-01-...')}"</em>. Para assistir: ${pastas || '—'} (só os vídeos que esperam o seu OK; depois de publicados eles vão para <code>${esc(path.join(RAIZ, 'postados'))}/</code>).</p>
 </div></body></html>`;
 }
 
@@ -106,8 +107,10 @@ try {
   const id = await enviarEmail(assunto, corpo);
   if (!teste) {
     const agora = new Date().toISOString();
-    for (const v of novos) notificados[v.chave] = {em: agora, email: id};
-    fs.writeFileSync(controle, JSON.stringify(notificados, null, 2));
+    // relê sob trava: o radar e a rodada automática podem avisar ao mesmo tempo
+    atualizarJson(controle, {}, (n) => {
+      for (const v of novos) n[v.chave] = {em: agora, email: id};
+    });
   }
   console.log(JSON.stringify({ok: true, enviado: true, teste, email_id: id, itens: novos.length}));
 } catch (e) {
