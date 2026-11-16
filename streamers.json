@@ -34,7 +34,7 @@
       "slug": "alanzoka",
       "nome": "alanzoka",
       "ativo": false,
-      "_obs": "Desativado: a descrição do canal proíbe uso das lives em outro canal (ver autorizacoes.json). Reative só com autorização por escrito.",
+      "_obs": "BLOQUEADO (ativo: false; status \"proibido\" no autorizacoes.json). Reconferido em 2026-11-16: a descrição de youtube.com/@alanzoka continua dizendo \"Não autorizo o uso desses vídeos ou qualquer outro das lives em outro canal\". @LivesdoAlanzoka não tem aba de lives nem de vídeos (nada a coletar). O usuário pediu para incluí-lo em 2026-11-16; não foi ativado por causa dessa proibição expressa. A paleta (azul elétrico #2979FF) já existe em ~/.maquina-cortes-gta/streamers/alanzoka.json, para o caso de ele autorizar por escrito (contato: alanzoka@vandep.ag).",
       "canais": [
         {
           "plataforma": "twitch",

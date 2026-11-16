@@ -18,8 +18,8 @@ echo.
 echo  RADAR AO VIVO - GTA 6
 echo  Pasta: %CD%
 echo.
-echo  Canais da Twitch separados por virgula (ex.: coringa,paulinholokobr,luquet4).
-echo  So Enter = todos os canais da Twitch dos streamers ativos do streamers.json.
+echo  Canais separados por virgula (ex.: coringa,paulinholokobr,luquet4). Canal da Kick: kick:nome (ex.: kick:coringa).
+echo  So Enter = todos os canais da Twitch e da Kick dos streamers ativos do streamers.json.
 echo.
 set "CANAIS="
 set /p "CANAIS=  Canais: "

@@ -17,6 +17,12 @@
 //                    basta e gasta metade do disco e da banda de "best")      --plataforma tiktok   tiktok | youtube_short
 //   --max-gb 6       tamanho máximo do .ts de cada canal: passou disso (e sem corte pendente), a gravação recomeça
 //
+// Kick: canal escrito como kick:<nome> (ex.: --canais coringa,kick:coringa). O chat da Kick não tem acesso anônimo
+// estável (as credenciais do WebSocket são entregues pelo site a cada sessão), então ali o pico é de ÁUDIO: a cada
+// medição o radar mede o volume médio dos últimos 10 s do .ts e compara com a média dos 5 min anteriores; pico =
+// volume ≥ média + --audio-db (padrão 5 dB) e acima de --audio-piso (padrão -40 dB), com o mesmo cooldown e teto por hora.
+// Nos nomes de arquivo, de pasta e de gatilho o canal da Kick aparece como kick-<nome> (fila/clipar-kick-coringa).
+//
 // Corte manual: crie o arquivo fila/clipar-<canal> (ou fila/clipar, que vale para todos os canais em gravação) e o
 // radar corta na próxima medição como se fosse um pico, sem olhar o chat nem o teto por hora.
 // Só um radar por vez (trava fila/.radar.lock): dois gravariam o mesmo .ts. Ao ligar, apaga os .ts e as pastas
@@ -66,6 +72,8 @@ const CFG = {
   maxHora: num('--max-hora', 6),
   qualidade: opt('--qualidade', '720p60,720p,best'),
   maxGb: num('--max-gb', 6),
+  audioDb: num('--audio-db', 5),
+  audioPiso: -Math.abs(num('--audio-piso', 40)),
   plataforma: opt('--plataforma', 'tiktok'),
   janela: 10, // segundos de cada medição
   media: 300, // segundos da média móvel
@@ -168,15 +176,52 @@ export class Detector {
   }
 }
 
+// Pico de áudio (Kick): uma amostra por medição = volume médio (dB) dos últimos `janela` segundos gravados.
+// Dispara quando a amostra atual passa a média (em energia) das anteriores em `db` decibéis.
+export class DetectorAudio {
+  constructor({janela = 10, media = 300, db = 5, pisoDb = -40, cooldown = 90} = {}) {
+    Object.assign(this, {janela, media, db, pisoDb, cooldown});
+    this.amostras = []; // {t, db}
+    this.ultimoPico = -Infinity;
+  }
+  registrar(ms, nivelDb) {
+    if (Number.isFinite(nivelDb)) this.amostras.push({t: ms, db: nivelDb});
+  }
+  avaliar(agora) {
+    const j = this.janela * 1000;
+    while (this.amostras.length && this.amostras[0].t <= agora - j - this.media * 1000) this.amostras.shift();
+    const atual = this.amostras.filter((a) => a.t > agora - j).pop();
+    const antes = this.amostras.filter((a) => a.t <= agora - j);
+    const mediaDb = antes.length ? 10 * Math.log10(antes.reduce((n, a) => n + 10 ** (a.db / 10), 0) / antes.length) : NaN;
+    let motivo = null;
+    if (!atual) motivo = 'sem áudio medido';
+    else if (antes.length < 6) motivo = 'histórico curto';
+    else if (atual.db < this.pisoDb) motivo = 'abaixo do piso';
+    else if (atual.db < mediaDb + this.db) motivo = 'abaixo do fator';
+    else if (agora - this.ultimoPico < this.cooldown * 1000) motivo = 'cooldown';
+    const pico = !motivo;
+    if (pico) this.ultimoPico = agora;
+    return {pico, atual: atual ? Number(atual.db.toFixed(1)) : null, mediaMovel: Number.isFinite(mediaDb) ? Number(mediaDb.toFixed(1)) : null, motivo};
+  }
+}
+// volume médio (dB) de um trecho do arquivo em gravação
+async function volumeDe(arquivo, inicio, duracao) {
+  const r = await rodar('ffmpeg', ['-hide_banner', '-nostats', '-ss', String(Math.max(0, inicio).toFixed(2)), '-t', String(duracao), '-i', arquivo, '-vn', '-af', 'volumedetect', '-f', 'null', '-'], {timeoutMs: 30e3});
+  const m = /mean_volume:\s*(-?[\d.]+) dB/.exec(r.err);
+  return m ? Number(m[1]) : NaN;
+}
+
 // ───────────────────────── canal: slug, autorização, paleta ─────────────────────────
-function dadosDoCanal(canal) {
+function dadosDoCanal(canal, plataforma = 'twitch') {
   const st = lerJson(path.join(RAIZ, 'streamers.json'), {streamers: []});
-  const dono = (st.streamers || []).find((s) => (s.canais || []).some((c) => c.plataforma === 'twitch' && c.url.replace(/\/+$/, '').split('/').pop().toLowerCase() === canal));
+  const dono = (st.streamers || []).find((s) => (s.canais || []).some((c) => c.plataforma === plataforma && c.url.replace(/\/+$/, '').split('/').pop().toLowerCase() === canal));
   const slug = dono?.slug || canal;
   const status = lerJson(path.join(RAIZ, 'autorizacoes.json'), {})[slug]?.status || 'nao_verificado';
   const p = lerJson(path.join(HOME, 'streamers', `${slug}.json`), {});
   const termos = (st.termos || ['gta 6', 'gta vi', 'gta6']).map((t) => t.toLowerCase());
-  return {canal, slug, nome: dono?.nome || p.nome || canal, status, base: p.corBase || '#FFFFFF', destaque: p.corDestaque || '#FFD400', temPaleta: !!p.corDestaque, termos};
+  const kick = plataforma === 'kick';
+  // rotulo: nome usado em arquivos, pastas, ids e gatilhos (canal da Kick ganha o prefixo kick-)
+  return {canal, plataforma, rotulo: kick ? `kick-${canal}` : canal, site: `${kick ? 'kick.com' : 'twitch.tv'}/${canal}`, slug, nome: dono?.nome || p.nome || canal, status, base: p.corBase || '#FFFFFF', destaque: p.corDestaque || '#FFD400', temPaleta: !!p.corDestaque, termos};
 }
 
 // ───────────────────────── IRC ─────────────────────────
@@ -278,7 +323,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     pag.push(w);
   }
   if (pag.length) paginas.push(pag);
-  const linhas = [`Dialogue: 0,${tempoAss(0)},${tempoAss(d.duracao + 1)},Credito,,0,0,0,,{\\pos(540,636)}twitch.tv/${d.canal}`];
+  const linhas = [`Dialogue: 0,${tempoAss(0)},${tempoAss(d.duracao + 1)},Credito,,0,0,0,,{\\pos(540,636)}${d.site || `twitch.tv/${d.canal}`}`];
   paginas.forEach((p, i) => {
     const limite = paginas[i + 1]?.[0].ini ?? Infinity;
     p.forEach((w, k) => {
@@ -294,7 +339,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 // ───────────────────────── corte + transcrição + render ─────────────────────────
 let encoder = null;
 async function gerarClipe({dados, fonte, inicio, duracao, quando, pico, chat = [], simulacao = false}) {
-  const {canal} = dados;
+  const canal = dados.rotulo || dados.canal;
+  const site = dados.site || `twitch.tv/${dados.canal}`;
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'radar-'));
   let soltarRender = () => {};
   const falhou = (etapa, r) => {
@@ -365,8 +411,8 @@ async function gerarClipe({dados, fonte, inicio, duracao, quando, pico, chat = [
       // o título é só um rascunho tirado da fala: a skill modo-ao-vivo-gta6 escreve o definitivo antes da aprovação
       titulo: (perto || transcricao || `Momento ao vivo de ${dados.nome}`).slice(0, 80).trim(),
       titulo_provisorio: true,
-      descricao: `Corte da live de ${dados.nome} na Twitch (twitch.tv/${canal}).`,
-      hashtags: [...(ehGta ? ['#gta6', '#gtavi'] : []), `#${dados.slug.replace(/[^\p{L}\p{N}_]/gu, '')}`, '#twitch'],
+      descricao: `Corte da live de ${dados.nome} na ${dados.plataforma === 'kick' ? 'Kick' : 'Twitch'} (${site}).`,
+      hashtags: [...(ehGta ? ['#gta6', '#gtavi'] : []), `#${dados.slug.replace(/[^\p{L}\p{N}_]/gu, '')}`, dados.plataforma === 'kick' ? '#kick' : '#twitch'],
       agendado_para: '',
       ao_vivo: true,
       aprovado: false,
@@ -519,8 +565,10 @@ async function monitorar(canais) {
   let fila = Promise.resolve(); // um corte por vez (whisper + GPU)
   const sessoes = [];
 
-  for (const canal of canais) {
-    const dados = dadosDoCanal(canal);
+  for (const espec of canais) {
+    const kick = espec.startsWith('kick:');
+    const dados = dadosDoCanal(espec.replace(/^kick:/, ''), kick ? 'kick' : 'twitch');
+    const canal = dados.rotulo;
     if (dados.status === 'proibido') {
       log(canal, 'streamer com status "proibido" no autorizacoes.json: canal recusado');
       continue;
@@ -528,12 +576,13 @@ async function monitorar(canais) {
     if (!dados.temPaleta) log(canal, `sem paleta em ~/.maquina-cortes-gta/streamers/${dados.slug}.json: legenda em branco e amarelo`);
     if (!['autorizado', 'politica_publica_de_clipes'].includes(dados.status)) log(canal, `autorização "${dados.status}": os cortes nascem marcados SEM AUTORIZAÇÃO`);
     const ts = path.join(FILA, `live-${canal}.ts`);
-    const s = {canal, dados, ts, det: new Detector(CFG), chat: [], pendentes: 0, cortes: [], proc: null, gravandoDesde: null, irc: null};
+    const s = {canal, kick, dados, ts, det: kick ? new DetectorAudio({janela: CFG.janela, media: CFG.media, db: CFG.audioDb, pisoDb: CFG.audioPiso, cooldown: CFG.cooldown}) : new Detector(CFG), chat: [], pendentes: 0, cortes: [], proc: null, gravandoDesde: null, irc: {fechar() {}}};
     sessoes.push(s);
+    if (kick) log(canal, `Kick: sem chat; pico por áudio (≥ média + ${CFG.audioDb} dB)`);
 
-    // chat
-    s.irc = conectarIrc(
-      canal,
+    // chat (só Twitch)
+    if (!kick) s.irc = conectarIrc(
+      dados.canal,
       (m) => {
         const agora = Date.now();
         s.det.registrar(agora);
@@ -543,13 +592,13 @@ async function monitorar(canais) {
       {aoEntrar: () => ((s.noChat = true), log(canal, 'chat conectado')), aviso: (t) => log(canal, t)},
     );
     // a Twitch não responde ao JOIN de um canal que não existe: sem resposta, o nome provavelmente está errado
-    setTimeout(() => s.noChat || log(canal, 'o chat não confirmou a entrada em 20 s: confira se o nome do canal na Twitch está certo'), 20e3);
+    if (!kick) setTimeout(() => s.noChat || log(canal, 'o chat não confirmou a entrada em 20 s: confira se o nome do canal na Twitch está certo'), 20e3);
 
     // gravação: o streamlink espera a live começar (--retry-streams) e sai quando ela acaba
     const gravar = () => {
       if (parando) return;
       s.gravandoDesde = null;
-      s.proc = spawn(sl.bin, [`twitch.tv/${canal}`, CFG.qualidade, '-o', ts, '--retry-streams', '30', '--force'], {stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true});
+      s.proc = spawn(sl.bin, [`https://${dados.site}`, CFG.qualidade, '-o', ts, '--retry-streams', '30', '--force'], {stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true});
       const sair = async (motivo) => {
         s.proc = null;
         log(canal, `streamlink terminou (${motivo})`);
@@ -590,7 +639,7 @@ async function monitorar(canais) {
         s.gravandoDesde = agora;
         log(s.canal, 'gravação começou');
         // categoria e título da live (para saber se é GTA 6); falhar aqui não atrapalha
-        rodar(sl.bin, ['--json', `twitch.tv/${s.canal}`], {timeoutMs: 30e3}).then((r) => {
+        rodar(sl.bin, ['--json', `https://${s.dados.site}`], {timeoutMs: 30e3}).then((r) => {
           try {
             const m = JSON.parse(r.out).metadata || {};
             s.dados.categoria = m.category || null;
@@ -605,18 +654,25 @@ async function monitorar(canais) {
         log(s.canal, `${path.basename(s.ts)} passou de ${CFG.maxGb} GB: recomeçando a gravação (alguns segundos sem gravar)`);
         matar(s.proc);
       }
+      // Kick: a amostra desta medição é o volume dos últimos 10 s gravados
+      let posAudio = NaN;
+      if (s.kick && s.gravandoDesde && s.proc && !s.rodizio) {
+        posAudio = await duracaoDe(s.ts);
+        if (Number.isFinite(posAudio) && posAudio > CFG.janela + 2) s.det.registrar(agora, await volumeDe(s.ts, posAudio - CFG.janela - 1, CFG.janela));
+      }
+      const un = s.kick ? 'dB' : 'msg/10 s';
       const r = s.det.avaliar(agora);
       // corte manual: fila/clipar-<canal> ou fila/clipar (todos os canais)
       let manual = false;
       for (const g of [path.join(FILA, `clipar-${s.canal}`), path.join(FILA, 'clipar')]) {
         if (!fs.existsSync(g)) continue;
         manual = true;
-        if (g.endsWith(s.canal) || s === sessoes[sessoes.length - 1]) fs.rmSync(g, {force: true});
+        if (g.endsWith(`clipar-${s.canal}`) || s === sessoes[sessoes.length - 1]) fs.rmSync(g, {force: true});
       }
-      if (volta % 6 === 0) log(s.canal, `chat ${r.atual} msg/10 s (média ${r.mediaMovel}) · ${tamanho ? `gravando, ${(tamanho / 1048576).toFixed(0)} MB` : 'fora do ar'}`);
+      if (volta % 6 === 0) log(s.canal, `${s.kick ? 'áudio' : 'chat'} ${r.atual} ${un} (média ${r.mediaMovel}) · ${tamanho ? `gravando, ${(tamanho / 1048576).toFixed(0)} MB` : 'fora do ar'}`);
       if (!r.pico && !manual) continue;
       if (!s.gravandoDesde || !s.proc || s.rodizio) {
-        log(s.canal, `${manual ? 'corte manual pedido' : 'pico no chat'} (${r.atual} msg/10 s, média ${r.mediaMovel}) mas a live não está sendo gravada: ignorado`);
+        log(s.canal, `${manual ? 'corte manual pedido' : s.kick ? 'pico de áudio' : 'pico no chat'} (${r.atual} ${un}, média ${r.mediaMovel}) mas a live não está sendo gravada: ignorado`);
         continue;
       }
       s.cortes = s.cortes.filter((t) => t > agora - 3600e3);
@@ -627,17 +683,17 @@ async function monitorar(canais) {
       s.cortes.push(agora);
       s.pendentes++;
       // posição do pico no arquivo: a duração gravada até agora (ou o relógio, se o ffprobe não souber dizer)
-      const noArquivo = await duracaoDe(s.ts);
+      const noArquivo = Number.isFinite(posAudio) ? posAudio : await duracaoDe(s.ts);
       const pos = Number.isFinite(noArquivo) && noArquivo > 0 ? noArquivo : (agora - s.gravandoDesde) / 1000;
       const inicio = Math.max(0, pos - CFG.antes);
       const quando = new Date(agora);
       const chat = s.chat.filter((m) => m.t > agora - 15e3).map((m) => m.texto);
-      log(s.canal, `${manual ? 'CORTE MANUAL' : 'PICO'}: ${r.atual} msg/10 s contra média de ${r.mediaMovel} · corto ${CFG.duracao} s a partir de ${inicio.toFixed(0)} s do arquivo`);
+      log(s.canal, `${manual ? 'CORTE MANUAL' : 'PICO'}: ${r.atual} ${un} contra média de ${r.mediaMovel} · corto ${CFG.duracao} s a partir de ${inicio.toFixed(0)} s do arquivo`);
       // espera o resto do trecho (depois do pico) ser gravado e entra na fila de cortes
       setTimeout(
         () => {
           fila = fila
-            .then(() => gerarClipe({dados: s.dados, fonte: s.ts, inicio, duracao: CFG.duracao, quando, pico: {mensagens_10s: r.atual, media_10s: r.mediaMovel, ...(manual ? {manual: true} : {})}, chat}))
+            .then(() => gerarClipe({dados: s.dados, fonte: s.ts, inicio, duracao: CFG.duracao, quando, pico: {...(s.kick ? {audio_db: r.atual, media_db: r.mediaMovel} : {mensagens_10s: r.atual, media_10s: r.mediaMovel}), ...(manual ? {manual: true} : {})}, chat}))
             .catch((e) => log(s.canal, `corte falhou: ${e.message}`))
             .finally(() => s.pendentes--);
         },
@@ -684,12 +740,12 @@ async function monitorar(canais) {
 if (args.includes('--testar-irc')) await testarIrc(String(opt('--testar-irc', '')).toLowerCase().replace(/^#/, ''), num('--segundos', 20));
 else if (args.includes('--simular')) await simular(opt('--simular', ''));
 else {
-  // sem --canais: os canais da Twitch dos streamers ativos do streamers.json (os "proibido" são recusados adiante)
+  // sem --canais: os canais da Twitch e da Kick dos streamers ativos do streamers.json (os "proibido" são recusados adiante)
   const doProjeto = (lerJson(path.join(RAIZ, 'streamers.json'), {streamers: []}).streamers || [])
     .filter((s) => s.ativo)
-    .flatMap((s) => (s.canais || []).filter((c) => c.plataforma === 'twitch').map((c) => c.url.replace(/\/+$/, '').split('/').pop()));
-  const canais = [...new Set(String(opt('--canais', doProjeto.join(','))).toLowerCase().split(',').map((c) => c.trim().replace(/^#|^https?:\/\/(www\.)?twitch\.tv\//, '')).filter(Boolean))];
-  if (!canais.length || canais.some((c) => !/^\w{2,25}$/.test(c))) {
+    .flatMap((s) => (s.canais || []).filter((c) => ['twitch', 'kick'].includes(c.plataforma)).map((c) => (c.plataforma === 'kick' ? 'kick:' : '') + c.url.replace(/\/+$/, '').split('/').pop()));
+  const canais = [...new Set(String(opt('--canais', doProjeto.join(','))).toLowerCase().split(',').map((c) => c.trim().replace(/^#|^https?:\/\/(www\.)?twitch\.tv\//, '').replace(/^https?:\/\/(www\.)?kick\.com\//, 'kick:')).filter(Boolean))];
+  if (!canais.length || canais.some((c) => !/^(kick:)?[\w-]{2,25}$/.test(c))) {
     console.error('Uso: node scripts/radar-ao-vivo.mjs --canais canal1,canal2 [--duracao 65] [--antes 45] [--fator 3] [--piso 8] [--cooldown 90]\n     node scripts/radar-ao-vivo.mjs --testar-irc <canal> | --simular <video> [--canal <canal>]');
     process.exit(1);
   }
