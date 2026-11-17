@@ -9,12 +9,14 @@
 //                                     ensaio: testa o detector com um chat sintético e faz o corte completo do vídeo
 //                                     (grava como lote de calibração, que nunca é publicado nem avisado por e-mail)
 // Opções (padrão entre parênteses):
-//   --duracao 65     duração do corte em segundos            --antes 45      quanto do corte vem ANTES do pico
+//   --duracao 40     duração do corte em segundos            --antes 25      quanto do corte vem ANTES do pico
+//                    (padrões do modo do pipeline, modo.mjs: crescimento 40/25; monetizacao 65/45)
 //   --fator 3        pico = taxa dos últimos 10 s ≥ fator × média móvel dos 5 min anteriores
 //   --piso 8         mínimo de mensagens em 10 s para valer como pico (chat parado não dispara)
 //   --cooldown 90    segundos entre dois cortes do mesmo canal --max-hora 6   teto de cortes por canal por hora (0 = sem teto)
 //   --qualidade 720p60,720p,best  qualidade pedida ao streamlink (a janela 16:9 do corte tem 1080 px de largura: 720p
-//                    basta e gasta metade do disco e da banda de "best")      --plataforma tiktok   tiktok | youtube_short
+//                    basta e gasta metade do disco e da banda de "best")      --plataforma         tiktok | youtube_short (padrão: as duas no
+//                    modo crescimento, um item por plataforma com o mesmo vídeo; tiktok no modo monetizacao)
 //   --max-gb 6       tamanho máximo do .ts de cada canal: passou disso (e sem corte pendente), a gravação recomeça
 //
 // Kick: canal escrito como kick:<nome> (ex.: --canais coringa,kick:coringa). O chat da Kick não tem acesso anônimo
@@ -51,6 +53,9 @@ import os from 'node:os';
 import path from 'node:path';
 import {RAIZ, TRAVA_RENDER, atualizarJson, carregarEnv, donoDaTrava, lerJson, travar, travarAsync} from '../.claude/skills/pipeline-diario-gta6/scripts/env.mjs';
 import {encoderH264} from '../.claude/skills/pipeline-diario-gta6/scripts/encoder.mjs';
+import {PLATAFORMAS_DUPLA, modo} from '../.claude/skills/pipeline-diario-gta6/scripts/modo.mjs';
+
+const MODO = modo();
 
 carregarEnv();
 const args = process.argv.slice(2);
@@ -64,8 +69,8 @@ const num = (k, d) => {
   return v;
 };
 const CFG = {
-  duracao: num('--duracao', 65),
-  antes: num('--antes', 45),
+  duracao: num('--duracao', MODO.radar.duracao),
+  antes: num('--antes', MODO.radar.antes),
   fator: num('--fator', 3),
   piso: num('--piso', 8),
   cooldown: num('--cooldown', 90),
@@ -74,7 +79,7 @@ const CFG = {
   maxGb: num('--max-gb', 6),
   audioDb: num('--audio-db', 5),
   audioPiso: -Math.abs(num('--audio-piso', 40)),
-  plataforma: opt('--plataforma', 'tiktok'),
+  plataformas: args.includes('--plataforma') ? [opt('--plataforma', '')] : MODO.publicacao_dupla ? PLATAFORMAS_DUPLA : ['tiktok'],
   janela: 10, // segundos de cada medição
   media: 300, // segundos da média móvel
 };
@@ -82,7 +87,7 @@ if (CFG.antes >= CFG.duracao) {
   console.error('--antes precisa ser menor que --duracao');
   process.exit(1);
 }
-if (!['tiktok', 'youtube_short'].includes(CFG.plataforma)) {
+if (CFG.plataformas.some((p) => !['tiktok', 'youtube_short'].includes(p))) {
   console.error('--plataforma: tiktok | youtube_short');
   process.exit(1);
 }
@@ -98,7 +103,9 @@ const dois = (n) => String(n).padStart(2, '0');
 const hora = (d = new Date()) => `${dois(d.getHours())}:${dois(d.getMinutes())}:${dois(d.getSeconds())}`;
 const carimboDe = (d = new Date()) => `${d.getFullYear()}${dois(d.getMonth() + 1)}${dois(d.getDate())}-${dois(d.getHours())}${dois(d.getMinutes())}${dois(d.getSeconds())}`;
 function log(canal, texto) {
-  const linha = `${new Date().toISOString().slice(0, 10)} ${hora()} [${canal}] ${texto}`;
+  // data local (não a UTC: de noite o toISOString já é o dia seguinte)
+  const d = new Date();
+  const linha = `${d.getFullYear()}-${dois(d.getMonth() + 1)}-${dois(d.getDate())} ${hora(d)} [${canal}] ${texto}`;
   console.log(linha);
   try {
     fs.appendFileSync(path.join(FILA, 'radar.log'), linha + '\n');
@@ -407,7 +414,6 @@ async function gerarClipe({dados, fonte, inicio, duracao, quando, pico, chat = [
     const item = {
       id: `live-${canal}-${carimbo}`,
       arquivo: path.relative(pasta, destino).split(path.sep).join('/'),
-      plataforma: CFG.plataforma,
       // o título é só um rascunho tirado da fala: a skill modo-ao-vivo-gta6 escreve o definitivo antes da aprovação
       titulo: (perto || transcricao || `Momento ao vivo de ${dados.nome}`).slice(0, 80).trim(),
       titulo_provisorio: true,
@@ -427,21 +433,30 @@ async function gerarClipe({dados, fonte, inicio, duracao, quando, pico, chat = [
       chat_amostra: chat.slice(-12),
       transcricao,
     };
+    const itemDe = (p) => ({
+      ...item,
+      plataforma: p,
+      ...(p === 'youtube_short' ? {hashtags: [...item.hashtags.slice(0, 2), '#shorts']} : {}),
+      ...(CFG.plataformas.length > 1 ? {publicacao_dupla: true} : {}),
+    });
     // relê sob trava e grava por temporário + rename: uma sessão de aprovação pode estar mexendo no mesmo arquivo
     atualizarJson(arquivoPostagem, {origem: 'radar-ao-vivo', canal, streamer: dados.slug, ...(simulacao ? {calibracao: true} : {}), itens: []}, (doc) => {
-      (doc.itens ||= []).push(item);
+      // um item por plataforma, com o mesmo vídeo (publicação dupla no modo crescimento)
+      for (const p of CFG.plataformas) (doc.itens ||= []).push(itemDe(p));
     });
     fs.rmSync(work, {recursive: true, force: true});
     const avisos = [];
-    if (CFG.plataforma === 'tiktok' && final < 62) avisos.push(`${final.toFixed(0)} s: abaixo dos 62 s do TikTok Creator Rewards`);
-    if (CFG.plataforma === 'youtube_short' && final > 58) avisos.push(`${final.toFixed(0)} s: acima dos 58 s do Short`);
+    for (const p of CFG.plataformas) {
+      const [min, max] = (CFG.plataformas.length > 1 ? MODO.faixas.dupla : MODO.faixas[p]).final;
+      if (final < min || final > max) avisos.push(`${final.toFixed(0)} s: fora da faixa ${min}–${max} s de ${p} (modo ${MODO.nome})`);
+    }
     if (!ehGta && !simulacao) avisos.push(`a live não parece ser de GTA 6 (categoria: ${dados.categoria || 'desconhecida'})`);
     log(canal, `corte pronto: ${path.relative(RAIZ, destino)} (${final.toFixed(1)} s, ${palavras.length} palavras, ${encoder.nome})${semAutorizacao ? ' · SEM AUTORIZAÇÃO' : ''}${avisos.length ? ' · ' + avisos.join(' · ') : ''}`);
 
     // 5) e-mail (na simulação só mostra o que seria enviado)
     const n = await rodar(process.execPath, [path.join(S, 'notificar-email.mjs'), ...(simulacao ? ['--simular'] : [])], {cwd: RAIZ, timeoutMs: 60e3});
     log(canal, `e-mail: ${n.status === 0 ? (simulacao || process.env.PIPELINE_SEM_EMAIL ? 'simulado' : ultimaLinha(n.out)) : `falhou (${ultimaLinha(n.err) || ultimaLinha(n.out)})`}`);
-    return {item, arquivo: destino, postagem: arquivoPostagem, palavras: palavras.length, encoder: encoder.nome, duracao: final};
+    return {item: itemDe(CFG.plataformas[0]), arquivo: destino, postagem: arquivoPostagem, palavras: palavras.length, encoder: encoder.nome, duracao: final};
   } catch (e) {
     return falhou('erro inesperado', {err: e.message});
   } finally {
@@ -542,7 +557,7 @@ async function monitorar(canais) {
     } catch {}
   }
   encoder = encoderH264();
-  log('radar', `${sl.versao} · encoder ${encoder.nome} · corte de ${CFG.duracao} s (${CFG.antes} s antes do pico) · pico ≥ ${CFG.fator}× a média e ≥ ${CFG.piso} msg/10 s · cooldown ${CFG.cooldown} s · qualidade ${CFG.qualidade} · ${CFG.maxHora ? `até ${CFG.maxHora} cortes por canal por hora` : "sem teto de cortes por hora"}`);
+  log('radar', `modo ${MODO.nome} (${CFG.plataformas.join(' + ')}) · ${sl.versao} · encoder ${encoder.nome} · corte de ${CFG.duracao} s (${CFG.antes} s antes do pico) · pico ≥ ${CFG.fator}× a média e ≥ ${CFG.piso} msg/10 s · cooldown ${CFG.cooldown} s · qualidade ${CFG.qualidade} · ${CFG.maxHora ? `até ${CFG.maxHora} cortes por canal por hora` : "sem teto de cortes por hora"}`);
 
   let parando = false;
   // no Windows o streamlink.exe pode ser um lançador que abre o Python como filho: matar só o pai deixaria a gravação
@@ -746,7 +761,7 @@ else {
     .flatMap((s) => (s.canais || []).filter((c) => ['twitch', 'kick'].includes(c.plataforma)).map((c) => (c.plataforma === 'kick' ? 'kick:' : '') + c.url.replace(/\/+$/, '').split('/').pop()));
   const canais = [...new Set(String(opt('--canais', doProjeto.join(','))).toLowerCase().split(',').map((c) => c.trim().replace(/^#|^https?:\/\/(www\.)?twitch\.tv\//, '').replace(/^https?:\/\/(www\.)?kick\.com\//, 'kick:')).filter(Boolean))];
   if (!canais.length || canais.some((c) => !/^(kick:)?[\w-]{2,25}$/.test(c))) {
-    console.error('Uso: node scripts/radar-ao-vivo.mjs --canais canal1,canal2 [--duracao 65] [--antes 45] [--fator 3] [--piso 8] [--cooldown 90]\n     node scripts/radar-ao-vivo.mjs --testar-irc <canal> | --simular <video> [--canal <canal>]');
+    console.error('Uso: node scripts/radar-ao-vivo.mjs --canais canal1,canal2 [--duracao 40] [--antes 25] [--fator 3] [--piso 8] [--cooldown 90]\n     node scripts/radar-ao-vivo.mjs --testar-irc <canal> | --simular <video> [--canal <canal>]');
     process.exit(1);
   }
   await monitorar(canais);

@@ -31,6 +31,8 @@ Igual ao TikTok (seção 2 de lá, incluindo o campo obrigatório **`sobre_gta6`
 
 Short: nota ≥ 75 e gancho (`ganchos.md`) ≥ 6. Segmento: nota ≥ 65. Descartes iguais aos do TikTok, com peso maior aqui: **música licenciada audível** (Content ID bloqueia) e violência gráfica no começo.
 
+**Modo `crescimento` (`R/pipeline.config.json` → `"modo"`, o atual):** não grave `shorts`. Todo corte já sai no YouTube Shorts pela publicação dupla do plano da `estrategia-tiktok-gta6` (seção 0 de lá). Aqui, só os `segmentos_para_compilado`. No modo `monetizacao`, siga a seção 4 normalmente.
+
 **Meta: 3 Shorts por dia** (12:00, 18:00 e 21:00 BRT), além do compilado 16:9 (20:00) quando houver material. Por live, entregue **até 4 Shorts** candidatos e até 5 segmentos; o pipeline publica os 3 melhores Shorts do dia e guarda o resto como reserva. Ids: `yt-01-<assunto>`; segmentos `seg-<slug-da-live>-01`.
 
 ## 4. Shorts (35–58 s finais)

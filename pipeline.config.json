@@ -1,4 +1,7 @@
 {
+  "modo": "crescimento",
+  "_modo": "Modo de produção (scripts/modo.mjs). crescimento (desde 2026-11-16, para ganhar seguidores): cortes de 20–55 s com gancho nos primeiros 2–3 s, todo corte publicado no TikTok e no YouTube Shorts ao mesmo tempo, título de topo por 3 s, radar ao vivo com 40 s (25 antes do pico + 15 depois). monetizacao: TikTok 62–85 s (Creator Rewards), Shorts 35–58 s, um corte por plataforma, título por 4 s, radar com 65 s (45 + 20). Trocar para monetizacao quando a conta passar de 10 mil seguidores e 100 mil views. Ajustes finos de um preset vão em modos.<nome> (mesmos campos do modo.mjs).",
+  "modos": {},
   "modo_revisao_manual": true,
   "_modo_revisao_manual": "true: cortes de streamer sem autorização (pendente/nao_verificado) são renderizados e aparecem na tabela de publicação marcados SEM AUTORIZAÇÃO; só saem com OK explícito item a item. false: ficam bloqueados.",
   "publicador": "zernio",

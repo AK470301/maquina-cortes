@@ -32,13 +32,13 @@ node scripts/radar-ao-vivo.mjs --canais coringa,paulinholokobr,luquet4
 
 | opção | padrão | para que serve |
 |---|---|---|
-| `--duracao` | 65 | segundos do corte (TikTok monetiza de 62 a 85 s) |
-| `--antes` | 45 | quanto do corte vem antes do pico (o chat reage depois do lance) |
+| `--duracao` | 40 (crescimento) / 65 (monetizacao) | segundos do corte; o padrão vem do modo do pipeline (`R/pipeline.config.json` → `"modo"`) |
+| `--antes` | 25 / 45 | quanto do corte vem antes do pico (o chat reage depois do lance): 25 + 15 depois = só o ápice |
 | `--fator` | 3 | pico = mensagens dos últimos 10 s ≥ fator × média dos 5 min anteriores |
 | `--piso` | 8 | mínimo de mensagens em 10 s (chat parado não dispara) |
 | `--cooldown` | 90 | segundos entre dois cortes do mesmo canal |
 | `--max-hora` | 6 | teto de cortes por canal por hora (0 = sem teto) |
-| `--plataforma` | tiktok | `youtube_short` pede `--duracao` de 35 a 58 |
+| `--plataforma` | as duas (crescimento) / tiktok | no modo crescimento cada clipe vira **dois itens** (TikTok e YouTube Shorts) com o mesmo vídeo; `--plataforma` força uma só |
 | `--qualidade` | 720p60,720p,best | qualidade pedida ao streamlink (a janela do corte tem 1080 px de largura: 720p basta e gasta metade do disco e da banda) |
 | `--max-gb` | 6 | tamanho máximo do `.ts` de cada canal; passou disso e sem corte pendente, a gravação recomeça (alguns segundos sem gravar) |
 
@@ -58,7 +58,7 @@ Cada corte vira um item em `R/cortes/ao-vivo-<canal>/postagem.json` com `ao_vivo
 
 1. Leia a transcrição e a amostra do chat; se precisar, veja quadros do vídeo em `R/para-postar/`.
 2. **Descarte** (`"descartado": true`, depois `node $S/para-postar.mjs <postagem.json>` para tirar o arquivo) quando: tocar música licenciada, a live não for de GTA 6, o pico for de sorteio, raid, anúncio ou conversa sem lance, ou o trecho não se sustentar sozinho.
-3. Para os que ficam, escreva o **título definitivo** (curto, o lance em primeiro lugar, sem enganar), ajuste `descricao` e `hashtags` e apague `titulo_provisorio`. O `publicar.mjs` recusa item que ainda tem o rascunho.
+3. Para os que ficam, escreva o **título definitivo** nos dois itens do clipe (modo crescimento: o do TikTok é uma legenda curta e o do YouTube um título com a palavra-chave no começo) (curto, o lance em primeiro lugar, sem enganar), ajuste `descricao` e `hashtags` e apague `titulo_provisorio`. O `publicar.mjs` recusa item que ainda tem o rascunho.
 4. Mostre a tabela e espere o OK:
 
 | id | canal | título | duração | autorização |

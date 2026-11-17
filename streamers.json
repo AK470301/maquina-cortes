@@ -141,7 +141,7 @@
       "slug": "luquet4",
       "nome": "LuquEt4",
       "ativo": true,
-      "_obs": "Twitch luquet4 e YouTube @LuquEt4 com VODs de live.",
+      "_obs": "Twitch luquet4 e YouTube @LuquEt4 com VODs de live. Kick: kick.com/luquet4 (canal verificado, YouTube @luquet4 no perfil; ao vivo lá em 16/11/2026, conferido pela API pública da Kick). No radar entra como kick:luquet4, junto com a Twitch.",
       "canais": [
         {
           "plataforma": "twitch",
@@ -150,6 +150,10 @@
         {
           "plataforma": "youtube",
           "url": "https://www.youtube.com/@LuquEt4"
+        },
+        {
+          "plataforma": "kick",
+          "url": "https://kick.com/luquet4"
         }
       ],
       "aceitar_sem_termo": false

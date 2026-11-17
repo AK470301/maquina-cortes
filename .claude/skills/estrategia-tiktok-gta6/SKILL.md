@@ -45,7 +45,19 @@ Separadamente, a **nota do gancho (0–10)** do `ganchos.md` → `edicao.nota`.
 
 **Meta: 3 TikToks por dia** (12:00, 18:00 e 21:00 BRT). Por live, entregue **até 4 candidatos** ranqueados pela nota, sem sobreposição e com `assunto` diferentes; o pipeline junta as lives do dia, publica os 3 melhores e guarda o resto como reserva para os dias seguintes. Ids: `tt-01-<assunto-curto>`, `tt-02-…`.
 
-## 4. Duração (crítica para monetizar)
+## 0. Modo do pipeline (leia antes)
+
+`R/pipeline.config.json` → `"modo"` (detalhes em `R/.claude/skills/pipeline-diario-gta6/scripts/modo.mjs`). **Hoje é `crescimento`**, que muda as seções 4, 5, 7 e 9:
+
+- **Duração final 20–55 s** (janela bruta aceita 21–65 s; live crua rende ~0,85 do bruto, então mire em ~35–55 s brutos). Curto, dinâmico, só o ápice: corte a introdução e a ressaca do lance. Teto abaixo de 60 s.
+- **Gancho nos primeiros 2–3 s:** `edicao.start` ~0,2 s antes da primeira palavra do gancho (`edicao.hook`, obrigatório). O `plano.mjs` recusa corte cuja primeira fala comece mais de 1 s depois do `start`. O título de topo fica 3 s na tela.
+- **Publicação dupla, 100% dos cortes:** cada corte sai no TikTok **e** no YouTube Shorts com o mesmo vídeo. No plano: `"plataformas": ["tiktok", "youtube_short"]` (sem `"plataforma"`), id `c-01-<assunto>`, `titulo_seo` = **título do YouTube** (até 60 caracteres, palavra-chave no começo), `legenda_tiktok` = **legenda curta do TikTok** (até 90 caracteres, tom de conversa, pode ter emoji), `hashtags` 3–5 **sem** `#shorts` (o item do YouTube recebe as 2 primeiras + `#shorts` sozinho).
+- O plano continua em `work/plano-tiktok.json` (lista `cortes`); a `estrategia-youtube-gta6` não faz Shorts neste modo, só os segmentos do compilado.
+- **Meta:** até 6 candidatos por live (os 3 melhores do dia saem nos dois apps).
+
+No modo `monetizacao` valem as seções abaixo como estão (TikTok 62–85 s, um corte por plataforma).
+
+## 4. Duração (modo monetizacao; no crescimento, seção 0)
 
 - **Final: 62–85 s.** Abaixo de 61 s o vídeo não entra no Creator Rewards.
 - O `build.mjs` tira as pausas, então o final sai menor que a janela (`end − start`). Razão final ÷ bruta medida na calibração (vídeo editado, poucas pausas): **0,91–0,98**. Live crua tem mais pausas: conte com **~0,85**.

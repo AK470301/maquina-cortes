@@ -5,10 +5,15 @@
 //   node plano.mjs cuts <layout> <saida-cuts.json> <plano.json> [...]  grava um cuts.json só com os cortes desse layout
 //                                                                     (gameplay | papo | cheia), pronto para a skill de edição,
 //                                                                     com o título de topo e os sons dele (assets/sfx)
+//   node plano.mjs postagem <postagem.json> <plano.json> [...]         escreve a proposta de publicação (todos aprovado: false)
+//                                                                     a partir dos planos: corte com "plataformas" vira um item
+//                                                                     por plataforma (mesmo vídeo); mantém o que já estava lá
+// Durações, publicação dupla e tempo do título vêm do modo do pipeline (modo.mjs; pipeline.config.json → "modo").
 // Sai com código 1 se houver erro.
 import fs from 'node:fs';
 import path from 'node:path';
-import {RAIZ, config} from './env.mjs';
+import {RAIZ, config, lerJson} from './env.mjs';
+import {PLATAFORMAS_DUPLA, modo, plataformaDoCorte} from './modo.mjs';
 
 const ROTA = {gameplay: 'cortes-gameplay', papo: 'cortes-papo'};
 // Regra do B-roll: o fundo de assets/broll-gta6 (layout "papo") só entra quando a fala do trecho é sobre GTA 6
@@ -16,14 +21,17 @@ const ROTA = {gameplay: 'cortes-gameplay', papo: 'cortes-papo'};
 // cheia: layout "cheia", editado pela cortes-video. Corte "gameplay" não usa B-roll: mostra a própria tela da live.
 const ROTA_LAYOUT = {gameplay: 'cortes-gameplay', papo: 'cortes-papo', cheia: 'cortes-video'};
 const layoutDe = (c) => (c.tipo === 'gameplay' ? 'gameplay' : c.sobre_gta6 === false ? 'cheia' : 'papo');
-// duração FINAL (depois de o build.mjs tirar as pausas) e janela BRUTA aceita na origem
+// duração FINAL (depois de o build.mjs tirar as pausas) e janela BRUTA aceita na origem: do modo (modo.mjs)
+const M = modo();
 const PLATAFORMA = {
-  tiktok: {final: [62, 85], bruta: [64, 100], prefixo: 'tt-', hashtags: [3, 5], titulo: 90},
-  youtube_short: {final: [35, 58], bruta: [36, 68], prefixo: 'yt-', hashtags: [3, 3], titulo: 60},
+  tiktok: {...M.faixas.tiktok, prefixo: 'tt-', hashtags: [3, 5], titulo: 90},
+  youtube_short: {...M.faixas.youtube_short, prefixo: 'yt-', hashtags: [3, 3], titulo: 60},
+  // publicação dupla: o mesmo corte no TikTok (legenda_tiktok + hashtags) e no YouTube (titulo_seo + 2 hashtags + #shorts)
+  dupla: {...M.faixas.dupla, prefixo: 'c-', hashtags: [3, 5], titulo: 60, legenda: 90},
 };
 const TITULO_TOPO_MAX = 6; // palavras
 const SFX_TITULO = ['impacto.wav', 'whoosh.wav'].map((f) => path.join(RAIZ, 'assets', 'sfx', f));
-const CAMPOS = ['id', 'plataforma', 'tipo', 'skill_edicao', 'timestamp_inicio', 'timestamp_fim', 'nota_viralidade', 'titulo_topo_tela', 'titulo_seo', 'hashtags', 'edicao'];
+const CAMPOS = ['id', 'tipo', 'skill_edicao', 'timestamp_inicio', 'timestamp_fim', 'nota_viralidade', 'titulo_topo_tela', 'titulo_seo', 'hashtags', 'edicao'];
 
 const seg = (ts) => {
   const m = /^(\d{1,2}):(\d{2}):(\d{2}(?:\.\d+)?)$/.exec(String(ts || ''));
@@ -45,14 +53,23 @@ function validar(arquivos) {
     const onde = `[${c.id || '?'}]`;
     for (const k of CAMPOS) if (c[k] === undefined || c[k] === null || c[k] === '') erros.push(`${onde} falta "${k}"`);
     if (c.roteiro_hook_tts || c.comentarios_tts) erros.push(`${onde} campos de narração TTS não existem mais (roteiro_hook_tts/comentarios_tts): use titulo_topo_tela`);
-    const P = PLATAFORMA[c.plataforma];
+    const plat = plataformaDoCorte(c);
+    const P = PLATAFORMA[plat];
     if (!P) {
-      erros.push(`${onde} plataforma "${c.plataforma}" inválida (tiktok | youtube_short)`);
+      erros.push(`${onde} plataforma "${c.plataforma}" inválida (tiktok | youtube_short, ou "plataformas": ["tiktok", "youtube_short"])`);
       continue;
+    }
+    if (M.publicacao_dupla && plat !== 'dupla') erros.push(`${onde} modo ${M.nome}: todo corte sai no TikTok e no YouTube. Use "plataformas": ["tiktok", "youtube_short"] (sem "plataforma") e id "c-..."`);
+    if (!M.publicacao_dupla && plat === 'dupla') erros.push(`${onde} publicação dupla só no modo crescimento (modo atual: ${M.nome}); use "plataforma"`);
+    if (plat === 'dupla') {
+      if (c.plataformas.length !== 2 || !PLATAFORMAS_DUPLA.every((p) => c.plataformas.includes(p))) erros.push(`${onde} "plataformas" deve ser ["tiktok", "youtube_short"]`);
+      if (!c.legenda_tiktok) erros.push(`${onde} falta "legenda_tiktok" (legenda curta do TikTok; o titulo_seo vai para o YouTube)`);
+      else if (String(c.legenda_tiktok).length > P.legenda) erros.push(`${onde} legenda_tiktok com mais de ${P.legenda} caracteres`);
+      if ((c.hashtags || []).includes('#shorts')) erros.push(`${onde} sem #shorts nas hashtags: o item do YouTube ganha #shorts sozinho`);
     }
     if (ids.has(c.id)) erros.push(`${onde} id repetido`);
     ids.add(c.id);
-    if (!String(c.id).startsWith(P.prefixo)) erros.push(`${onde} id de ${c.plataforma} deve começar com "${P.prefixo}"`);
+    if (!String(c.id).startsWith(P.prefixo)) erros.push(`${onde} id de ${plat === 'dupla' ? 'corte duplo' : plat} deve começar com "${P.prefixo}"`);
     if (!ROTA[c.tipo]) erros.push(`${onde} tipo "${c.tipo}" inválido (gameplay | papo)`);
     if (typeof c.sobre_gta6 !== 'boolean') erros.push(`${onde} falta "sobre_gta6" (true | false): a fala do trecho é sobre GTA 6? Decide o B-roll e as hashtags`);
     const e = c.edicao || {};
@@ -68,7 +85,14 @@ function validar(arquivos) {
     else {
       if (Math.abs(ini - e.start) > 0.6 || Math.abs(fim - e.end) > 0.6) erros.push(`${onde} timestamp_inicio/fim não batem com edicao.start/end (${ini}/${fim} vs ${e.start}/${e.end})`);
       const bruta = e.end - e.start;
-      if (bruta < P.bruta[0] || bruta > P.bruta[1]) erros.push(`${onde} janela bruta de ${bruta.toFixed(1)} s fora de ${P.bruta[0]}–${P.bruta[1]} s (final precisa dar ${P.final[0]}–${P.final[1]} s)`);
+      if (bruta < P.bruta[0] || bruta > P.bruta[1]) erros.push(`${onde} janela bruta de ${bruta.toFixed(1)} s fora de ${P.bruta[0]}–${P.bruta[1]} s (final precisa dar ${P.final[0]}–${P.final[1]} s, modo ${M.nome})`);
+    }
+    // gancho nos primeiros segundos: o corte começa na fala do gancho, sem respiro morto na abertura
+    if (M.gancho_max_s != null && Number.isFinite(e.start)) {
+      if (!String(e.hook || '').trim()) erros.push(`${onde} falta edicao.hook (a frase que prende nos primeiros 2–3 s)`);
+      const caps = lerJson(path.join(path.dirname(path.resolve(c._plano)), 'captions.json'), null);
+      const primeira = Array.isArray(caps) ? caps.find((w) => w.startMs / 1000 >= e.start - 0.05 && String(w.text).trim()) : null;
+      if (primeira && primeira.startMs / 1000 - e.start > M.gancho_max_s) erros.push(`${onde} a primeira fala começa ${(primeira.startMs / 1000 - e.start).toFixed(1)} s depois do start (máx. ${M.gancho_max_s} s): comece o corte no gancho`);
     }
     if (!(c.nota_viralidade >= 0 && c.nota_viralidade <= 100)) erros.push(`${onde} nota_viralidade deve ser 0–100`);
     if (!(e.nota >= 6 && e.nota <= 10)) erros.push(`${onde} edicao.nota (nota do gancho, 0–10) precisa ser ≥ 6`);
@@ -80,7 +104,7 @@ function validar(arquivos) {
     const h = Array.isArray(c.hashtags) ? c.hashtags : [];
     if (h.length < P.hashtags[0] || h.length > P.hashtags[1]) erros.push(`${onde} ${h.length} hashtags (esperado ${P.hashtags.join('–')})`);
     if (h.some((x) => !/^#[\p{L}\p{N}_]+$/u.test(x))) erros.push(`${onde} hashtag mal formada`);
-    if (c.plataforma === 'youtube_short' && !h.includes('#shorts')) erros.push(`${onde} Short precisa de #shorts`);
+    if (plat === 'youtube_short' && !h.includes('#shorts')) erros.push(`${onde} Short precisa de #shorts`);
     if (c._autorizacao === 'proibido') erros.push(`${onde} streamer com status "proibido": não entra em plano nenhum`);
     if (c._autorizacao === 'nao_verificado' && !c.bloqueado_publicacao) {
       // modo_revisao_manual (pipeline.config.json): o corte segue, mas só sai com OK item a item na tabela de publicação
@@ -91,7 +115,7 @@ function validar(arquivos) {
     if (c.contem_spoiler) avisos.push(`${onde} tem spoiler: título de topo começa com "SPOILER" e nada de spoiler no título/capa`);
   }
   const porPlat = {};
-  for (const c of cortes) (porPlat[`${c._plano}|${c.plataforma}`] ||= []).push(c);
+  for (const c of cortes) (porPlat[`${c._plano}|${plataformaDoCorte(c)}`] ||= []).push(c);
   for (const lista of Object.values(porPlat)) {
     const ord = lista.filter((c) => c.edicao).sort((a, b) => a.edicao.start - b.edicao.start);
     for (let i = 1; i < ord.length; i++)
@@ -104,8 +128,8 @@ function validar(arquivos) {
 const [cmd, ...rest] = process.argv.slice(2);
 if (cmd === 'validar') {
   const {cortes, erros, avisos} = validar(rest);
-  const resumo = cortes.map((c) => ({id: c.id, plataforma: c.plataforma, tipo: c.tipo, skill: c.skill_edicao, layout: c.edicao?.layout, sobre_gta6: c.sobre_gta6, bruta_s: c.edicao ? +(c.edicao.end - c.edicao.start).toFixed(1) : null, nota: c.nota_viralidade, titulo_topo: c.titulo_topo_tela, bloqueado: !!c.bloqueado_publicacao}));
-  console.log(JSON.stringify({ok: !erros.length, cortes: resumo, erros, avisos}, null, 2));
+  const resumo = cortes.map((c) => ({id: c.id, plataforma: c.plataformas ? c.plataformas.join('+') : c.plataforma, tipo: c.tipo, skill: c.skill_edicao, layout: c.edicao?.layout, sobre_gta6: c.sobre_gta6, bruta_s: c.edicao ? +(c.edicao.end - c.edicao.start).toFixed(1) : null, nota: c.nota_viralidade, titulo_topo: c.titulo_topo_tela, bloqueado: !!c.bloqueado_publicacao}));
+  console.log(JSON.stringify({ok: !erros.length, modo: M.nome, cortes: resumo, erros, avisos}, null, 2));
   process.exit(erros.length ? 1 : 0);
 } else if (cmd === 'cuts') {
   const [tipo, saida, ...planos] = rest;
@@ -125,11 +149,46 @@ if (cmd === 'validar') {
     process.exit(1);
   }
   const sfx = SFX_TITULO.filter((f) => fs.existsSync(f));
-  const cuts = {layout: tipo, streamer: streamers[0] || null, clips: doTipo.map((c) => ({...c.edicao, tituloDur: 4, tituloSfx: sfx}))};
+  const cuts = {layout: tipo, streamer: streamers[0] || null, clips: doTipo.map((c) => ({...c.edicao, tituloDur: M.titulo_dur, tituloSfx: sfx}))};
   fs.mkdirSync(path.dirname(path.resolve(saida)), {recursive: true});
   fs.writeFileSync(saida, JSON.stringify(cuts, null, 2));
   console.log(JSON.stringify({skill: ROTA_LAYOUT[tipo], arquivo: saida, clips: cuts.clips.map((c) => c.id)}));
+} else if (cmd === 'postagem') {
+  const [saida, ...planos] = rest;
+  if (!saida || !planos.length) {
+    console.error('Uso: node plano.mjs postagem <postagem.json> <plano.json> [...]');
+    process.exit(1);
+  }
+  const {cortes, erros} = validar(planos);
+  if (erros.length) {
+    console.error(erros.join('\n'));
+    process.exit(1);
+  }
+  const base = path.dirname(path.resolve(saida));
+  const doc = lerJson(saida, {origem: 'pipeline-diario-gta6', itens: []});
+  doc.streamer ||= cortes[0]?._streamer || null;
+  doc.modo = M.nome;
+  doc.itens ||= [];
+  const novos = [];
+  for (const c of cortes) {
+    const semAutorizacao = !['autorizado', 'politica_publica_de_clipes'].includes(c._autorizacao);
+    const render = path.relative(base, path.join(path.dirname(path.resolve(c._plano)), '..', 'render', `${c.id}.mp4`)).split(path.sep).join('/');
+    const comum = {id: c.id, arquivo: render, descricao: c.descricao || '', agendado_para: '', nota: c.nota_viralidade, assunto: c.edicao?.assunto || null, sobre_gta6: c.sobre_gta6, aprovado: false, sem_autorizacao: semAutorizacao, aprovado_sem_autorizacao: false};
+    const plats = c.plataformas || [c.plataforma];
+    for (const p of plats) {
+      const item =
+        p === 'tiktok'
+          ? {...comum, plataforma: p, titulo: c.legenda_tiktok || c.titulo_seo, hashtags: c.hashtags}
+          : {...comum, plataforma: p, titulo: c.titulo_seo, hashtags: c.plataformas ? [...c.hashtags.filter((h) => h !== '#shorts').slice(0, 2), '#shorts'] : c.hashtags};
+      if (plats.length > 1) item.publicacao_dupla = true;
+      if (doc.itens.some((x) => x.id === item.id && x.plataforma === item.plataforma)) continue; // já proposto: não mexe
+      doc.itens.push(item);
+      novos.push(`${item.id}:${item.plataforma}`);
+    }
+  }
+  fs.writeFileSync(saida, JSON.stringify(doc, null, 2));
+  console.log(JSON.stringify({arquivo: saida, modo: M.nome, novos, total: doc.itens.length}, null, 2));
 } else {
-  console.error('Comandos: validar | cuts (veja o cabeçalho do arquivo)');
+  console.error('Comandos: validar | cuts | postagem (veja o cabeçalho do arquivo)');
   process.exit(1);
 }

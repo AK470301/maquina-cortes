@@ -92,7 +92,7 @@ for (const it of itens) {
 }
 
 // envios imediatos já feitos (este postado.json e os das outras pastas): quando cada um foi ou vai ao ar
-function enviosImediatos() {
+function enviosImediatos(ignorar = new Set()) {
   const out = [];
   const daqui = path.resolve(registroFile);
   for (const pasta of ['cortes', 'compilados']) {
@@ -101,9 +101,15 @@ function enviosImediatos() {
     for (const d of fs.readdirSync(dir)) {
       const f = path.join(dir, d, 'postado.json');
       const reg = path.resolve(f) === daqui ? registro : lerJson(f, {});
-      for (const r of Object.values(reg)) {
+      // publicação dupla: o mesmo corte (mesmo id) no TikTok e no YouTube conta como um envio só
+      const vistos = new Set();
+      for (const [chave, r] of Object.entries(reg)) {
         // registro antigo não tem "imediato": sem horário agendado, saiu na hora
         if (!r?.ok || !(r.imediato ?? !r.agendado_para)) continue;
+        const id = chave.replace(/:[^:]+$/, '');
+        // a outra metade de um corte que está saindo agora (reenvio de quem falhou): não empurra o próprio par
+        if (vistos.has(id) || (path.resolve(f) === daqui && ignorar.has(id))) continue;
+        vistos.add(id);
         const ms = Date.parse(r.sai_em || r.agendado_para || r.em);
         if (!Number.isNaN(ms)) out.push(ms);
       }
@@ -124,7 +130,7 @@ const escalonamento = [];
 {
   const naVez = imediatos.filter((it) => it.aprovado && (!it.sem_autorizacao || (revisaoManual && it.aprovado_sem_autorizacao)) && !registro[`${it.id}:${it.plataforma}`]?.ok);
   if (naVez.length) {
-    const feitos = enviosImediatos();
+    const feitos = enviosImediatos(new Set(naVez.map((it) => it.id)));
     const agoraMs = Date.now();
     const ultimo = feitos.length ? Math.max(...feitos) : null;
     const porDia = {};
@@ -133,16 +139,21 @@ const escalonamento = [];
     // nunca a menos de 16 min de agora (um horário agendado precisa de folga para o upload).
     let proximo = ultimo !== null && agoraMs - ultimo < regra.folga_min * 60e3 ? Math.max(ultimo + regra.intervalo_min * 60e3, agoraMs + 16 * 60e3) : null;
     const fora = [];
-    for (const it of naVez) {
+    // publicação dupla: os itens do mesmo corte (mesmo id, uma plataforma cada) saem juntos e contam como um envio
+    const grupos = new Map();
+    for (const it of naVez) (grupos.get(it.id) || grupos.set(it.id, []).get(it.id)).push(it);
+    for (const [id, grupo] of grupos) {
       const quando = proximo ?? agoraMs;
       const dia = diaNoFuso(quando);
       if ((porDia[dia] || 0) >= regra.por_dia && !args.includes('--acima-do-teto')) {
-        fora.push(it.id);
+        fora.push(id);
         continue;
       }
       porDia[dia] = (porDia[dia] || 0) + 1;
-      if (proximo !== null) it.agendado_para = isoNoFuso(quando);
-      escalonamento.push({id: it.id, sai: proximo === null ? 'agora' : it.agendado_para, em_minutos: Math.round((quando - agoraMs) / 60e3)});
+      for (const it of grupo) {
+        if (proximo !== null) it.agendado_para = isoNoFuso(quando);
+        escalonamento.push({id: it.id, plataforma: it.plataforma, sai: proximo === null ? 'agora' : it.agendado_para, em_minutos: Math.round((quando - agoraMs) / 60e3)});
+      }
       proximo = quando + regra.intervalo_min * 60e3;
     }
     if (fora.length)
@@ -248,13 +259,22 @@ const resultados = [];
 for (const p of plano.filter((x) => x.acao === 'enviar')) {
   const r = publicador === 'zernio' ? await enviarZernio(p, contas) : await enviar(p);
   // enviado com sucesso: o vídeo sai de para-postar/ e vai para postados/ (falhou: fica em para-postar/ para nova tentativa)
-  if (r.ok) {
+  // Publicação dupla: o mesmo arquivo serve ao item do TikTok e ao do YouTube; só sai de para-postar/ quando todos os
+  // itens que usam o arquivo foram enviados (aí o caminho novo vale para todos eles)
+  const irmaos = itens.filter((o) => o !== p.item && !o.descartado && path.resolve(base, o.arquivo || '') === p.arquivo);
+  const faltaIrmao = irmaos.some((o) => !registro[`${o.id}:${o.plataforma}`]?.ok);
+  if (r.ok && !faltaIrmao) {
     const novo = moverParaPostados(p.arquivo);
     if (novo) {
-      p.item.arquivo = path.relative(base, novo);
+      const rel = path.relative(base, novo);
+      for (const o of [p.item, ...irmaos]) {
+        o.arquivo = rel;
+        const k = `${o.id}:${o.plataforma}`;
+        if (registro[k]) registro[k].arquivo = rel;
+      }
       r.movido_para = path.relative(RAIZ, novo);
     }
-  }
+  } else if (r.ok) r.aguardando = 'o vídeo fica em para-postar/ até a outra plataforma deste corte ser enviada';
   const em = new Date().toISOString();
   // "imediato" e "sai_em" alimentam o escalonamento dos próximos envios (intervalo de 25 min e teto por dia)
   registro[p.chave] = {...r, em, arquivo: p.item.arquivo, agendado_para: p.item.agendado_para || null, imediato: !!p.item.publicar_agora, sai_em: p.item.agendado_para || em};

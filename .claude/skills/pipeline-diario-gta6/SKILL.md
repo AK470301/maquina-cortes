@@ -44,8 +44,8 @@ Em `R/cortes/<slug-da-live>/` (rode tudo dessa pasta), siga `~/.maquina-cortes-g
 
 ## 3. Planos e aprovação
 
-1. Acione `estrategia-tiktok-gta6` → `work/plano-tiktok.json`.
-2. Acione `estrategia-youtube-gta6` → `work/plano-youtube.json`.
+1. Acione `estrategia-tiktok-gta6` → `work/plano-tiktok.json`. No modo `crescimento` (`R/pipeline.config.json` → `"modo"`, o atual) todo corte é **duplo** (`"plataformas": ["tiktok", "youtube_short"]`, 20–55 s, gancho no 1º segundo): um vídeo, publicado nos dois apps.
+2. Acione `estrategia-youtube-gta6` → `work/plano-youtube.json` (no `crescimento`, só os segmentos do compilado).
 3. Valide os dois juntos:
    ```bash
    node $S/plano.mjs validar work/plano-tiktok.json work/plano-youtube.json
@@ -88,7 +88,7 @@ Para refazer um corte: copie o `cuts-<tipo>.json` de volta para `work/cuts.json`
 node $S/conferir.mjs render work/plano-tiktok.json work/plano-youtube.json
 ```
 
-Recusa duração final fora de **TikTok 62–85 s / Shorts 35–58 s** e diz quanto ajustar: mude `end` no `cuts-<tipo>.json` (curto: estique até o próximo fim de frase; longo: corte no payoff anterior), atualize `edicao.end`/`timestamp_fim` no plano e re-renderize com `--so <id>`. Depois extraia 2 quadros de cada `render/<id>.mp4` (um em ~1 s, com o título; outro no meio) e olhe: enquadramento, título, legenda, fundo.
+Recusa duração final fora da faixa do modo (**crescimento: 20–55 s** para o corte duplo; monetizacao: TikTok 62–85 s / Shorts 35–58 s) e diz quanto ajustar: mude `end` no `cuts-<tipo>.json` (curto: estique até o próximo fim de frase; longo: corte no payoff anterior), atualize `edicao.end`/`timestamp_fim` no plano e re-renderize com `--so <id>`. Depois extraia 2 quadros de cada `render/<id>.mp4` (um em ~1 s, com o título; outro no meio) e olhe: enquadramento, título, legenda, fundo.
 
 ## 7. Banco do compilado
 
@@ -115,6 +115,8 @@ Tabela com **todos** os itens (TikTok, Shorts e compilado), arquivo = **`render/
 - **Meta diária: 3 TikToks + 3 Shorts** (mais o compilado quando houver). Junte os candidatos de todas as lives do dia, ordene pela nota e proponha os 3 melhores de cada plataforma para hoje; os demais entram na tabela como **reserva** (aprovados, eles vão para os próximos dias).
 - **Horários: automáticos.** Deixe `agendado_para` vazio e preencha `nota` e `assunto` em cada item da postagem: o `publicar.mjs` chama o `agendar.mjs`, que dá a cada aprovado o próximo horário de pico livre (12:00, 18:00, 21:00 BRT; compilado às 20:00; `pipeline.config.json` → `agenda`), no máximo 3 por dia por plataforma, sem repetir horário já agendado na Zernio ou em outra postagem, e sem dois itens do mesmo `assunto` no mesmo dia. Horário dado pelo usuário é respeitado. Para mostrar a coluna "quando" na tabela antes do OK, rode `node $S/agendar.mjs postagem.json --teste` (com os itens marcados como aprovados só na simulação).
 - Coluna autorização: `ok` ou **SEM AUTORIZAÇÃO**. Item bloqueado (`modo_revisao_manual: false`) nem entra.
+
+**Gere a proposta com** `node $S/plano.mjs postagem postagem.json work/plano-tiktok.json work/plano-youtube.json` (da pasta da live): cada corte duplo vira **dois itens** com o mesmo vídeo (TikTok: `legenda_tiktok` + hashtags; YouTube: `titulo_seo` + 2 hashtags + `#shorts`), todos em `aprovado: false`; itens já propostos não são tocados. Os dois itens de um corte recebem horário de pico na mesma hora, e o vídeo só sai de `para-postar/` quando os dois forem enviados. Na tabela, aprovar o corte aprova os dois itens.
 
 **Antes de pedir o OK, grave a proposta** em `postagem.json` na pasta da live (formato no cabeçalho de `$S/publicar.mjs`), com todos os itens em `aprovado: false`, `agendado_para` vazio, `nota`, `assunto` e `sem_autorizacao`. Depois rode `node $S/para-postar.mjs postagem.json`: ele copia cada vídeo da proposta (do `render/`, ou o `compilado.mp4`) para `R/para-postar/<live>--<id>.mp4` e aponta o `arquivo` do item para lá (a origem fica em `arquivo_render`). Se um corte for re-renderizado (`build.mjs --so`), rode de novo: a cópia é trocada. Em seguida rode `node $S/notificar-email.mjs`: ele manda um e-mail (Resend) com quantidade, plataforma, título, duração e id de cada vídeo novo pendente, e guarda os ids em `R/notificados.json` para nunca repetir. Na rodada automática (`PIPELINE_HEADLESS`) o pipeline **para aqui**; o `rodar-diario.sh` também chama a notificação no fim, por garantia.
 

@@ -28,15 +28,18 @@ export function prepararParaPostar(arquivo, {gravar = true} = {}) {
     const atual = path.resolve(base, it.arquivo || '');
     // corte do radar ao vivo ("ao_vivo": true): já nasce em para-postar/ (LIVE--<canal>--<data>.mp4) e não tem render/
     if (it.ao_vivo) {
-      if (it.descartado && fs.existsSync(atual) && path.dirname(atual) === PARA_POSTAR) {
+      const irmaoVivoLive = (doc.itens || []).some((o) => o !== it && o.id === it.id && !o.descartado && !enviados[`${o.id}:${o.plataforma}`]?.ok);
+      if (it.descartado && !irmaoVivoLive && fs.existsSync(atual) && path.dirname(atual) === PARA_POSTAR) {
         if (gravar) fs.rmSync(atual);
         acoes.push({id: it.id, acao: 'removido de para-postar (descartado)'});
       } else if (!it.descartado) acoes.push({id: it.id, acao: fs.existsSync(atual) ? 'já em para-postar (ao vivo)' : 'erro', ...(fs.existsSync(atual) ? {arquivo: path.relative(RAIZ, atual)} : {motivo: `arquivo não encontrado: ${it.arquivo}`})});
       continue;
     }
     const destino =path.join(PARA_POSTAR, `${path.basename(base)}--${it.id}${path.extname(atual) || '.mp4'}`);
+    // publicação dupla: o vídeo é o mesmo nos dois itens do corte; só sai se nenhum outro item dele continua valendo
+    const irmaoVivo = (doc.itens || []).some((o) => o !== it && o.id === it.id && !o.descartado && !enviados[`${o.id}:${o.plataforma}`]?.ok);
     if (it.descartado) {
-      if (fs.existsSync(destino)) {
+      if (fs.existsSync(destino) && !irmaoVivo) {
         if (gravar) fs.rmSync(destino);
         acoes.push({id: it.id, acao: 'removido de para-postar (descartado)'});
       }
