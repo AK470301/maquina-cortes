@@ -12,7 +12,7 @@
 // Sai com código 1 se houver erro.
 import fs from 'node:fs';
 import path from 'node:path';
-import {RAIZ, config, lerJson} from './env.mjs';
+import {RAIZ, config, lerJson, morteSubita} from './env.mjs';
 import {PLATAFORMAS_DUPLA, modo, plataformaDoCorte} from './modo.mjs';
 
 const ROTA = {gameplay: 'cortes-gameplay', papo: 'cortes-papo'};
@@ -45,6 +45,9 @@ const cortesDe = (planos) =>
   });
 
 function validar(arquivos) {
+  // Modo Morte Súbita (config/morte-subita.ativo): sem trava de criador, tema ou spoiler; ficam só as regras técnicas
+  // (campos, duração, gancho, rota de layout, música licenciada, sobreposição). A aprovação é manual, item a item.
+  const MS = morteSubita();
   const erros = [];
   const avisos = [];
   const cortes = cortesDe(arquivos);
@@ -77,7 +80,7 @@ function validar(arquivos) {
     const layoutEsperado = layoutDe(c);
     if (e.layout !== layoutEsperado) erros.push(`${onde} edicao.layout deve ser "${layoutEsperado}"${layoutEsperado === 'cheia' ? ' (papo que não é sobre GTA 6 não leva B-roll de GTA 6)' : ''}`);
     if (ROTA[c.tipo] && c.skill_edicao !== ROTA_LAYOUT[layoutEsperado]) erros.push(`${onde} layout "${layoutEsperado}" deve ir para "${ROTA_LAYOUT[layoutEsperado]}", não "${c.skill_edicao}"`);
-    if (c.sobre_gta6 === false && (c.hashtags || []).some((h) => /^#gta(6|vi)$/i.test(h))) erros.push(`${onde} hashtag de GTA 6 num corte que não é sobre GTA 6`);
+    if (!MS && c.sobre_gta6 === false && (c.hashtags || []).some((h) => /^#gta(6|vi)$/i.test(h))) erros.push(`${onde} hashtag de GTA 6 num corte que não é sobre GTA 6`);
     if (e.titulo !== c.titulo_topo_tela) erros.push(`${onde} edicao.titulo deve ser igual a titulo_topo_tela`);
     const ini = seg(c.timestamp_inicio);
     const fim = seg(c.timestamp_fim);
@@ -105,14 +108,16 @@ function validar(arquivos) {
     if (h.length < P.hashtags[0] || h.length > P.hashtags[1]) erros.push(`${onde} ${h.length} hashtags (esperado ${P.hashtags.join('–')})`);
     if (h.some((x) => !/^#[\p{L}\p{N}_]+$/u.test(x))) erros.push(`${onde} hashtag mal formada`);
     if (plat === 'youtube_short' && !h.includes('#shorts')) erros.push(`${onde} Short precisa de #shorts`);
-    if (c._autorizacao === 'proibido') erros.push(`${onde} streamer com status "proibido": não entra em plano nenhum`);
-    if (c._autorizacao === 'nao_verificado' && !c.bloqueado_publicacao) {
+    if (c._autorizacao === 'proibido' && !MS) erros.push(`${onde} streamer com status "proibido": não entra em plano nenhum`);
+    if (MS) {
+      if (c._autorizacao !== 'autorizado' && c._autorizacao !== 'politica_publica_de_clipes') avisos.push(`${onde} Morte Súbita: criador sem autorização registrada (${c._autorizacao || 'desconhecida'}); o corte segue e só sai com OK manual deste item`);
+    } else if (c._autorizacao === 'nao_verificado' && !c.bloqueado_publicacao) {
       // modo_revisao_manual (pipeline.config.json): o corte segue, mas só sai com OK item a item na tabela de publicação
       if (config().modo_revisao_manual) avisos.push(`${onde} streamer sem autorização registrada: publicação só com OK manual deste item`);
       else erros.push(`${onde} streamer não verificado: bloqueado_publicacao deve ser true (ou ative modo_revisao_manual)`);
     }
     if ((c.riscos || []).includes('musica_licenciada')) erros.push(`${onde} música licenciada audível: o motor não separa a trilha; descarte ou troque o trecho`);
-    if (c.contem_spoiler) avisos.push(`${onde} tem spoiler: título de topo começa com "SPOILER" e nada de spoiler no título/capa`);
+    if (c.contem_spoiler && !MS) avisos.push(`${onde} tem spoiler: título de topo começa com "SPOILER" e nada de spoiler no título/capa`);
   }
   const porPlat = {};
   for (const c of cortes) (porPlat[`${c._plano}|${plataformaDoCorte(c)}`] ||= []).push(c);

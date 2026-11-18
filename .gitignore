@@ -41,3 +41,7 @@ motor-cortes/motor/scripts/_install-whisper.mjs
 # Backups locais (podem conter o .env)
 *.zip
 backup-*/
+
+# Modo Morte Súbita: estado de execução (o config/morte-subita.ativo vai para o git)
+fila-entrada/
+logs/

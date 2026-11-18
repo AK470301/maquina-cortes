@@ -16,6 +16,12 @@ $R = $PSScriptRoot
 $S = Join-Path $R '.claude\skills\pipeline-diario-gta6\scripts'
 $Turnos = @('09', '19')
 Set-Location $R
+# Modo Morte Súbita ativo (config\morte-subita.ativo): este cron antigo (streamers.json) fica parado; quem roda é o
+# rodar-cron.ps1 (tarefas MorteSubita09/MorteSubita21). Volta a rodar sozinho quando o modo for desativado.
+if (Test-Path (Join-Path $R 'config\morte-subita.ativo')) {
+  [IO.File]::AppendAllText((Join-Path $R 'fila\cron.log'), "=== $((Get-Date).ToString('yyyy-MM-ddTHH:mm:sszzz')) rodar-diario.ps1 ignorado: Modo Morte Súbita ativo (use rodar-cron.ps1)`r`n", (New-Object Text.UTF8Encoding $false))
+  exit 0
+}
 New-Item -ItemType Directory -Force (Join-Path $R 'fila\turnos') | Out-Null
 # o node escreve em UTF-8; sem isto os acentos chegam trocados ao log
 try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch {}

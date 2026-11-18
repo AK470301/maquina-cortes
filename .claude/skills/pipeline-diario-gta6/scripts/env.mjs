@@ -24,7 +24,12 @@ export function config() {
   return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : {};
 }
 
-export const lerJson = (f, padrao) => (fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : padrao);
+// Modo Morte Súbita: ativo enquanto existir <projeto>/config/morte-subita.ativo (só o usuário desativa, manualmente).
+// Nele a única restrição de conteúdo é o idioma português: sem trava de criador (autorização), tema ou spoiler.
+export const ARQUIVO_MORTE_SUBITA = path.join(RAIZ, 'config', 'morte-subita.ativo');
+export const morteSubita = () => fs.existsSync(ARQUIVO_MORTE_SUBITA);
+
+export const lerJson =(f, padrao) => (fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : padrao);
 
 // ── JSON compartilhado entre processos (postagem.json, postado.json, notificados.json) ──
 // O radar ao vivo, a rodada automática e uma sessão de aprovação podem gravar ao mesmo tempo. Duas proteções:

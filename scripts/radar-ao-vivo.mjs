@@ -24,6 +24,9 @@
 // medição o radar mede o volume médio dos últimos 10 s do .ts e compara com a média dos 5 min anteriores; pico =
 // volume ≥ média + --audio-db (padrão 5 dB) e acima de --audio-piso (padrão -40 dB), com o mesmo cooldown e teto por hora.
 // Nos nomes de arquivo, de pasta e de gatilho o canal da Kick aparece como kick-<nome> (fila/clipar-kick-coringa).
+// YouTube: yt:<id do canal UC...> ou yt:@handle (o processar-link.ps1 usa isto para URL de live do YouTube); grava
+// youtube.com/channel/<id>/live com o streamlink e detecta pico pelo áudio, como na Kick. Rótulo: yt-<canal>.
+// Modo Morte Súbita (config/morte-subita.ativo): canal "proibido" não é recusado; o corte nasce SEM AUTORIZAÇÃO.
 //
 // Corte manual: crie o arquivo fila/clipar-<canal> (ou fila/clipar, que vale para todos os canais em gravação) e o
 // radar corta na próxima medição como se fosse um pico, sem olhar o chat nem o teto por hora.
@@ -51,7 +54,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import {RAIZ, TRAVA_RENDER, atualizarJson, carregarEnv, donoDaTrava, lerJson, travar, travarAsync} from '../.claude/skills/pipeline-diario-gta6/scripts/env.mjs';
+import {RAIZ, TRAVA_RENDER, atualizarJson, carregarEnv, donoDaTrava, lerJson, morteSubita, travar, travarAsync} from '../.claude/skills/pipeline-diario-gta6/scripts/env.mjs';
 import {encoderH264} from '../.claude/skills/pipeline-diario-gta6/scripts/encoder.mjs';
 import {PLATAFORMAS_DUPLA, modo} from '../.claude/skills/pipeline-diario-gta6/scripts/modo.mjs';
 
@@ -227,8 +230,12 @@ function dadosDoCanal(canal, plataforma = 'twitch') {
   const p = lerJson(path.join(HOME, 'streamers', `${slug}.json`), {});
   const termos = (st.termos || ['gta 6', 'gta vi', 'gta6']).map((t) => t.toLowerCase());
   const kick = plataforma === 'kick';
-  // rotulo: nome usado em arquivos, pastas, ids e gatilhos (canal da Kick ganha o prefixo kick-)
-  return {canal, plataforma, rotulo: kick ? `kick-${canal}` : canal, site: `${kick ? 'kick.com' : 'twitch.tv'}/${canal}`, slug, nome: dono?.nome || p.nome || canal, status, base: p.corBase || '#FFFFFF', destaque: p.corDestaque || '#FFD400', temPaleta: !!p.corDestaque, termos};
+  // YouTube: canal = id do canal (UC..., 24 caracteres) ou @handle; o streamlink grava a live atual de /live
+  const yt = plataforma === 'youtube';
+  const site = yt ? `www.youtube.com/${/^UC[\w-]{22}$/.test(canal) ? `channel/${canal}` : `@${canal.replace(/^@/, '')}`}/live` : `${kick ? 'kick.com' : 'twitch.tv'}/${canal}`;
+  // rotulo: nome usado em arquivos, pastas, ids e gatilhos (Kick ganha o prefixo kick-, YouTube yt-)
+  const rotulo = kick ? `kick-${canal}` : yt ? `yt-${canal.replace(/^@/, '').toLowerCase().replace(/[^\w-]/g, '')}` : canal;
+  return {canal, plataforma, rotulo, site, slug, nome: dono?.nome || p.nome || canal, status, base: p.corBase || '#FFFFFF', destaque: p.corDestaque || '#FFD400', temPaleta: !!p.corDestaque, termos};
 }
 
 // ───────────────────────── IRC ─────────────────────────
@@ -417,8 +424,8 @@ async function gerarClipe({dados, fonte, inicio, duracao, quando, pico, chat = [
       // o título é só um rascunho tirado da fala: a skill modo-ao-vivo-gta6 escreve o definitivo antes da aprovação
       titulo: (perto || transcricao || `Momento ao vivo de ${dados.nome}`).slice(0, 80).trim(),
       titulo_provisorio: true,
-      descricao: `Corte da live de ${dados.nome} na ${dados.plataforma === 'kick' ? 'Kick' : 'Twitch'} (${site}).`,
-      hashtags: [...(ehGta ? ['#gta6', '#gtavi'] : []), `#${dados.slug.replace(/[^\p{L}\p{N}_]/gu, '')}`, dados.plataforma === 'kick' ? '#kick' : '#twitch'],
+      descricao: `Corte da live de ${dados.nome} n${dados.plataforma === 'kick' ? 'a Kick' : dados.plataforma === 'youtube' ? 'o YouTube' : 'a Twitch'} (${site}).`,
+      hashtags: [...(ehGta ? ['#gta6', '#gtavi'] : []), `#${dados.slug.replace(/[^\p{L}\p{N}_]/gu, '')}`, {kick: '#kick', youtube: '#aovivo'}[dados.plataforma] || '#twitch'],
       agendado_para: '',
       ao_vivo: true,
       aprovado: false,
@@ -581,22 +588,28 @@ async function monitorar(canais) {
   const sessoes = [];
 
   for (const espec of canais) {
-    const kick = espec.startsWith('kick:');
-    const dados = dadosDoCanal(espec.replace(/^kick:/, ''), kick ? 'kick' : 'twitch');
+    const plataforma = espec.startsWith('kick:') ? 'kick' : espec.startsWith('yt:') ? 'youtube' : 'twitch';
+    // Kick e YouTube: sem chat anônimo lido aqui; o pico é de áudio (DetectorAudio)
+    const semChat = plataforma !== 'twitch';
+    const dados = dadosDoCanal(espec.replace(/^(kick|yt):/, ''), plataforma);
     const canal = dados.rotulo;
     if (dados.status === 'proibido') {
-      log(canal, 'streamer com status "proibido" no autorizacoes.json: canal recusado');
-      continue;
+      // Modo Morte Súbita: sem trava de criador; o corte nasce SEM AUTORIZAÇÃO e só sai com OK manual do item
+      if (!morteSubita()) {
+        log(canal, 'streamer com status "proibido" no autorizacoes.json: canal recusado');
+        continue;
+      }
+      log(canal, 'streamer "proibido" no autorizacoes.json, aceito pelo Modo Morte Súbita (publicação só com OK manual)');
     }
     if (!dados.temPaleta) log(canal, `sem paleta em ~/.maquina-cortes-gta/streamers/${dados.slug}.json: legenda em branco e amarelo`);
     if (!['autorizado', 'politica_publica_de_clipes'].includes(dados.status)) log(canal, `autorização "${dados.status}": os cortes nascem marcados SEM AUTORIZAÇÃO`);
     const ts = path.join(FILA, `live-${canal}.ts`);
-    const s = {canal, kick, dados, ts, det: kick ? new DetectorAudio({janela: CFG.janela, media: CFG.media, db: CFG.audioDb, pisoDb: CFG.audioPiso, cooldown: CFG.cooldown}) : new Detector(CFG), chat: [], pendentes: 0, cortes: [], proc: null, gravandoDesde: null, irc: {fechar() {}}};
+    const s = {canal, semChat, dados, ts, det: semChat ? new DetectorAudio({janela: CFG.janela, media: CFG.media, db: CFG.audioDb, pisoDb: CFG.audioPiso, cooldown: CFG.cooldown}) : new Detector(CFG), chat: [], pendentes: 0, cortes: [], proc: null, gravandoDesde: null, irc: {fechar() {}}};
     sessoes.push(s);
-    if (kick) log(canal, `Kick: sem chat; pico por áudio (≥ média + ${CFG.audioDb} dB)`);
+    if (semChat) log(canal, `${plataforma === 'kick' ? 'Kick' : 'YouTube'}: sem chat; pico por áudio (≥ média + ${CFG.audioDb} dB)`);
 
     // chat (só Twitch)
-    if (!kick) s.irc = conectarIrc(
+    if (!semChat) s.irc = conectarIrc(
       dados.canal,
       (m) => {
         const agora = Date.now();
@@ -607,7 +620,7 @@ async function monitorar(canais) {
       {aoEntrar: () => ((s.noChat = true), log(canal, 'chat conectado')), aviso: (t) => log(canal, t)},
     );
     // a Twitch não responde ao JOIN de um canal que não existe: sem resposta, o nome provavelmente está errado
-    if (!kick) setTimeout(() => s.noChat || log(canal, 'o chat não confirmou a entrada em 20 s: confira se o nome do canal na Twitch está certo'), 20e3);
+    if (!semChat) setTimeout(() => s.noChat || log(canal, 'o chat não confirmou a entrada em 20 s: confira se o nome do canal na Twitch está certo'), 20e3);
 
     // gravação: o streamlink espera a live começar (--retry-streams) e sai quando ela acaba
     const gravar = () => {
@@ -671,11 +684,11 @@ async function monitorar(canais) {
       }
       // Kick: a amostra desta medição é o volume dos últimos 10 s gravados
       let posAudio = NaN;
-      if (s.kick && s.gravandoDesde && s.proc && !s.rodizio) {
+      if (s.semChat && s.gravandoDesde && s.proc && !s.rodizio) {
         posAudio = await duracaoDe(s.ts);
         if (Number.isFinite(posAudio) && posAudio > CFG.janela + 2) s.det.registrar(agora, await volumeDe(s.ts, posAudio - CFG.janela - 1, CFG.janela));
       }
-      const un = s.kick ? 'dB' : 'msg/10 s';
+      const un = s.semChat ? 'dB' : 'msg/10 s';
       const r = s.det.avaliar(agora);
       // corte manual: fila/clipar-<canal> ou fila/clipar (todos os canais)
       let manual = false;
@@ -684,10 +697,10 @@ async function monitorar(canais) {
         manual = true;
         if (g.endsWith(`clipar-${s.canal}`) || s === sessoes[sessoes.length - 1]) fs.rmSync(g, {force: true});
       }
-      if (volta % 6 === 0) log(s.canal, `${s.kick ? 'áudio' : 'chat'} ${r.atual} ${un} (média ${r.mediaMovel}) · ${tamanho ? `gravando, ${(tamanho / 1048576).toFixed(0)} MB` : 'fora do ar'}`);
+      if (volta % 6 === 0) log(s.canal, `${s.semChat ? 'áudio' : 'chat'} ${r.atual} ${un} (média ${r.mediaMovel}) · ${tamanho ? `gravando, ${(tamanho / 1048576).toFixed(0)} MB` : 'fora do ar'}`);
       if (!r.pico && !manual) continue;
       if (!s.gravandoDesde || !s.proc || s.rodizio) {
-        log(s.canal, `${manual ? 'corte manual pedido' : s.kick ? 'pico de áudio' : 'pico no chat'} (${r.atual} ${un}, média ${r.mediaMovel}) mas a live não está sendo gravada: ignorado`);
+        log(s.canal, `${manual ? 'corte manual pedido' : s.semChat ? 'pico de áudio' : 'pico no chat'} (${r.atual} ${un}, média ${r.mediaMovel}) mas a live não está sendo gravada: ignorado`);
         continue;
       }
       s.cortes = s.cortes.filter((t) => t > agora - 3600e3);
@@ -708,7 +721,7 @@ async function monitorar(canais) {
       setTimeout(
         () => {
           fila = fila
-            .then(() => gerarClipe({dados: s.dados, fonte: s.ts, inicio, duracao: CFG.duracao, quando, pico: {...(s.kick ? {audio_db: r.atual, media_db: r.mediaMovel} : {mensagens_10s: r.atual, media_10s: r.mediaMovel}), ...(manual ? {manual: true} : {})}, chat}))
+            .then(() => gerarClipe({dados: s.dados, fonte: s.ts, inicio, duracao: CFG.duracao, quando, pico: {...(s.semChat ? {audio_db: r.atual, media_db: r.mediaMovel} : {mensagens_10s: r.atual, media_10s: r.mediaMovel}), ...(manual ? {manual: true} : {})}, chat}))
             .catch((e) => log(s.canal, `corte falhou: ${e.message}`))
             .finally(() => s.pendentes--);
         },
@@ -759,9 +772,10 @@ else {
   const doProjeto = (lerJson(path.join(RAIZ, 'streamers.json'), {streamers: []}).streamers || [])
     .filter((s) => s.ativo)
     .flatMap((s) => (s.canais || []).filter((c) => ['twitch', 'kick'].includes(c.plataforma)).map((c) => (c.plataforma === 'kick' ? 'kick:' : '') + c.url.replace(/\/+$/, '').split('/').pop()));
-  const canais = [...new Set(String(opt('--canais', doProjeto.join(','))).toLowerCase().split(',').map((c) => c.trim().replace(/^#|^https?:\/\/(www\.)?twitch\.tv\//, '').replace(/^https?:\/\/(www\.)?kick\.com\//, 'kick:')).filter(Boolean))];
-  if (!canais.length || canais.some((c) => !/^(kick:)?[\w-]{2,25}$/.test(c))) {
-    console.error('Uso: node scripts/radar-ao-vivo.mjs --canais canal1,canal2 [--duracao 40] [--antes 25] [--fator 3] [--piso 8] [--cooldown 90]\n     node scripts/radar-ao-vivo.mjs --testar-irc <canal> | --simular <video> [--canal <canal>]');
+  // yt:<id do canal UC... | @handle> mantém maiúsculas (o id do canal do YouTube diferencia); o resto vai para minúsculas
+  const canais = [...new Set(String(opt('--canais', doProjeto.join(','))).split(',').map((c) => c.trim()).map((c) => (/^yt:/i.test(c) ? `yt:${c.slice(3)}` : c.toLowerCase().replace(/^#|^https?:\/\/(www\.)?twitch\.tv\//, '').replace(/^https?:\/\/(www\.)?kick\.com\//, 'kick:'))).filter(Boolean))];
+  if (!canais.length || canais.some((c) => !/^((kick:)?[\w-]{2,25}|yt:(UC[\w-]{22}|@?[\w.-]{2,40}))$/.test(c))) {
+    console.error('Uso: node scripts/radar-ao-vivo.mjs --canais canal1,kick:canal2,yt:UCxxxx [--duracao 40] [--antes 25] [--fator 3] [--piso 8] [--cooldown 90]\n     node scripts/radar-ao-vivo.mjs --testar-irc <canal> | --simular <video> [--canal <canal>]');
     process.exit(1);
   }
   await monitorar(canais);
