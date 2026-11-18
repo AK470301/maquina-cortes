@@ -6,6 +6,8 @@
 // andamento/agendada, id já em logs/processados.txt e vídeo com menos de 21 s (não cabe um corte de 20–55 s).
 // Nenhuma outra restrição de canal, formato ou tema.
 //
+// Evento: --preparar termina gravando fila-entrada/evento-fase1-sucesso.json (contrato em emitirEvento), o ÚNICO gatilho
+// da Fase 2 no rodar-cron.ps1. --auto é só para uso manual (o cron não tem mais fallback sem o claude-free).
 // Uso: node scripts/morte-subita/fase1.mjs --teste                 teste seco: mostra os 3 que seriam escolhidos; não grava nada
 //      node scripts/morte-subita/fase1.mjs --buscar [--rodada R]   grava fila-entrada/fase1-candidatos.json (3 escolhidos + reservas)
 //      node scripts/morte-subita/fase1.mjs --preparar id1,id2,id3 --rodada R   grava os ids em logs/processados.txt, baixa e
@@ -27,6 +29,7 @@ const RODADA = opt('--rodada', process.env.MS_RODADA || new Date().toISOString()
 const BUSCAS = ['GTA 6', 'GTA VI'];
 const F_CANDIDATOS = path.join(FILA_ENTRADA, 'fase1-candidatos.json');
 const F_RESULTADO = path.join(FILA_ENTRADA, 'fase1.json');
+export const F_EVENTO = path.join(FILA_ENTRADA, 'evento-fase1-sucesso.json');
 
 // janela de 6 meses, igual ao --dateafter today-6months do yt-dlp
 const limite = new Date();
@@ -117,7 +120,30 @@ async function preparar(ids, candidatos) {
   doc.status = doc.preparados.length ? 'concluido' : 'falhou';
   doc.fim = new Date().toISOString();
   gravar();
+  // ÚLTIMO PASSO: o evento que libera a Fase 2 (só com 1–3 vídeos baixados E transcritos, conferidos no disco)
+  const evento = emitirEvento(doc);
+  if (evento) doc.evento = F_EVENTO;
   return doc;
+}
+
+// Contrato fila-entrada/evento-fase1-sucesso.json (lido pelo rodar-cron.ps1, que só chama a Fase 2 com ele):
+// {"status": "SUCESSO", "rodada", "gerado_em", "videos": [{"id", "slug", "titulo", "pasta", "video": <source.mp4>,
+//  "transcricao": <captions.json>, "meta": <meta.json>}]} — caminhos absolutos; gravado por temporário + rename.
+function emitirEvento(doc) {
+  const videos = [];
+  for (const p of doc.preparados) {
+    const pasta = path.join(FILA_ENTRADA, p.slug);
+    const e = lerJson(path.join(pasta, 'entrada.json'), {});
+    const arq = {video: path.join(pasta, 'source.mp4'), transcricao: path.join(pasta, 'captions.json'), meta: path.join(pasta, 'meta.json')};
+    if (e.pronto && Object.values(arq).every((f) => fs.existsSync(f) && fs.statSync(f).size > 0)) videos.push({id: p.id, slug: p.slug, titulo: p.titulo, pasta, ...arq});
+    else log(`[fase1] ${p.slug}: arquivos incompletos, fora do evento`);
+  }
+  if (!videos.length || videos.length > QUANTOS) return null;
+  const tmp = `${F_EVENTO}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify({status: 'SUCESSO', rodada: doc.rodada, gerado_em: new Date().toISOString(), videos}, null, 2));
+  fs.renameSync(tmp, F_EVENTO);
+  log(`[fase1] evento de sucesso emitido: ${videos.length} vídeo(s)`);
+  return F_EVENTO;
 }
 
 function semSelecao(cand) {

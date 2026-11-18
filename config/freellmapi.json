@@ -1,0 +1,8 @@
+{
+    "exe":  "C:\\Users\\Lucas\\AppData\\Local\\Programs\\freellmapi-desktop\\FreeLLMAPI.exe",
+    "processo":  "FreeLLMAPI.exe",
+    "porta":  31415,
+    "url":  "http://127.0.0.1:31415",
+    "health":  "/v1/models",
+    "capturado_em":  "2026-11-18T06:57:12-03:00"
+}

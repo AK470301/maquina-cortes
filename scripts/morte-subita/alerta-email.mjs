@@ -3,7 +3,8 @@
 //  a) Alerta de Clipe Gerado: node alerta-email.mjs clipes <cortes/slug> [--simular]
 //     (chamado pelo fase2.mjs finalizar, ou seja, por todo fluxo que gera clipe de VOD: cron e processar-link.ps1;
 //     o radar ao vivo avisa cada clipe pelo notificar-email.mjs, que já existia)
-//  b) Alerta de Status do Cron: node alerta-email.mjs cron --rodada R --hora 09:00 --status ok|vazio|erro [--detalhe "..."] [--simular]
+//  b) Alerta de Status do Cron: node alerta-email.mjs cron --rodada R --hora 09:00 --status ok|vazio|erro|falha-fase1 [--motivo "..."] [--detalhe "..."] [--simular]
+//     (falha-fase1: assunto "Cron Morte Súbita falhou na Fase 1: <motivo>", ex. FreeLLMAPI indisponível)
 //     (chamado pelo rodar-cron.ps1 em TODA execução, inclusive quando não há vídeo novo em português)
 // --simular (ou PIPELINE_SEM_EMAIL=1) mostra o que seria enviado, sem enviar.
 import fs from 'node:fs';
@@ -45,7 +46,7 @@ Vídeo bruto e <code>work/</code> já apagados (${(resumo.liberado_mb ?? 0).toFi
   return enviarEmail(assunto, corpo);
 }
 
-export async function emailCron({rodada, hora, status, detalhe = ''}) {
+export async function emailCron({rodada, hora, status, detalhe = '', motivo = ''}) {
   const f1 = lerJson(path.join(FILA_ENTRADA, 'fase1.json'), {});
   const fase1 = f1.rodada === rodada ? f1 : {};
   const gerados = lerJsonl(CLIPES_GERADOS).filter((g) => g.rodada === rodada);
@@ -53,7 +54,13 @@ export async function emailCron({rodada, hora, status, detalhe = ''}) {
   let titulo;
   let assunto;
   let corpo;
-  if (status === 'vazio') {
+  if (status === 'falha-fase1') {
+    // claude-free/FreeLLMAPI fora do ar, sem tokens, rate limit, timeout ou erro de conexão: a Fase 2 não foi chamada
+    assunto = `Cron Morte Súbita falhou na Fase 1: ${motivo || 'erro'}`;
+    titulo = `Cron das ${hora}: falhou na Fase 1`;
+    corpo = `<p style="background:#fef2f2;border-left:4px solid #b91c1c;padding:10px 12px"><b>${esc(motivo || 'erro')}</b><br>O evento de sucesso da Fase 1 não foi emitido, então a Fase 2 (claude oficial) <b>não</b> foi iniciada.</p>
+${detalhe ? `<pre style="white-space:pre-wrap;background:#f6f6f6;padding:10px;font-size:12px">${esc(detalhe)}</pre>` : ''}`;
+  } else if (status === 'vazio') {
     assunto = `Cron das ${hora}: rodou normalmente, nenhum vídeo novo em português`;
     titulo = `Cron das ${hora}: nenhum vídeo inédito em português`;
     corpo = `<p style="background:#eef6ff;border-left:4px solid #2563eb;padding:10px 12px">O cron das <b>${esc(hora)}</b> rodou normalmente, mas não havia vídeos inéditos em português na janela (mais vistos sobre "GTA 6"/"GTA VI" publicados nos últimos 6 meses). A Fase 2 não foi chamada.</p>
@@ -83,7 +90,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       if (!fs.existsSync(f)) throw new Error(`não achei ${f} (gerado pelo fase2.mjs finalizar)`);
       id = await emailClipes(JSON.parse(fs.readFileSync(f, 'utf8')));
     } else if (cmd === 'cron') {
-      id = await emailCron({rodada: opt('--rodada'), hora: opt('--hora', '?'), status: opt('--status', 'ok'), detalhe: opt('--detalhe', '')});
+      id = await emailCron({rodada: opt('--rodada'), hora: opt('--hora', '?'), status: opt('--status', 'ok'), detalhe: opt('--detalhe', ''), motivo: opt('--motivo', '')});
     } else throw new Error('Uso: alerta-email.mjs clipes <cortes/slug> | cron --rodada R --hora HH:MM --status ok|vazio|erro');
     console.log(JSON.stringify({ok: true, email: id}));
   } catch (e) {

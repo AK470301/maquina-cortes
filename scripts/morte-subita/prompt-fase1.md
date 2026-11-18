@@ -6,4 +6,7 @@ Você é a FASE 1 do Modo Morte Súbita (rodada {{RODADA}}). Trabalhe em silênc
    - Se "selecionados" vier vazio: pare aqui e responda só "FASE1 VAZIA" (o script já registrou o resultado; o e-mail é do rodar-cron.ps1).
 3. Rode: node scripts/morte-subita/fase1.mjs --preparar <ids separados por vírgula, no máximo 3, do mais visto para o menos> --rodada {{RODADA}}
    (grava os ids em logs/processados.txt, baixa e transcreve em fila-entrada/; pode demorar — espere terminar).
-4. Responda só com a última linha do JSON de status ("status": concluido | falhou) e termine.
+   Como ÚLTIMO passo, o próprio --preparar grava fila-entrada/evento-fase1-sucesso.json (status "SUCESSO", data/hora e os
+   caminhos dos vídeos e transcrições), só se 1 a 3 vídeos ficaram baixados e transcritos. Nunca crie, edite ou apague
+   esse arquivo à mão: ele é o único gatilho da Fase 2.
+4. Responda só com a última linha do JSON de status ("status": concluido | falhou, e "evento" quando houver) e termine.
