@@ -27,6 +27,8 @@
       "Bash(node ~/.maquina-cortes-gta/ferramentas/publicar/publicar.mjs:*)",
       "Bash(node motor-cortes/ferramentas/publicar/publicar.mjs:*)",
       "Bash(node C:/Users/Lucas/.maquina-cortes-gta/ferramentas/publicar/publicar.mjs:*)",
+      "Bash(node scripts/morte-subita/fase1.mjs --preparar:*)",
+      "Bash(node scripts/morte-subita/fase1.mjs --auto:*)",
       "Bash(curl:*)",
       "Bash(wget:*)",
       "Bash(rm:*)",

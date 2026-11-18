@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// Modo Morte Súbita — FASE 1 do cron (rodada pelo claude-free; o rodar-cron.ps1 roda --auto se ele falhar).
+// Modo Morte Súbita — FASE 1 do cron. Divisão de trabalho (desde 18/11, 21:00):
+//   claude-free  → --buscar + --selecionar (só a escolha dos 3; termina em poucos minutos, sem esperar download)
+//   rodar-cron   → --preparar com os ids de fila-entrada/selecionados.json (download + transcrição + evento), nativo, 0 tokens
 // Busca geral no YouTube pelos vídeos mais vistos sobre "GTA 6" e "GTA VI" (busca ordenada por visualizações, com
 // --extractor-args youtube:lang=pt), publicados nos últimos 6 meses (--dateafter today-6months), e aplica APENAS o filtro
 // de idioma: o vídeo precisa estar em português (comum.mjs → idiomaDoVideo). Também ficam de fora: live ainda em
@@ -7,12 +9,18 @@
 // Nenhuma outra restrição de canal, formato ou tema.
 //
 // Evento: --preparar termina gravando fila-entrada/evento-fase1-sucesso.json (contrato em emitirEvento), o ÚNICO gatilho
-// da Fase 2 no rodar-cron.ps1. --auto é só para uso manual (o cron não tem mais fallback sem o claude-free).
+// da Fase 2 no rodar-cron.ps1, que roda o --preparar depois que o claude-free grava fila-entrada/selecionados.json.
+// --auto é só para uso manual (o cron não tem fallback sem o claude-free).
 // Uso: node scripts/morte-subita/fase1.mjs --teste                 teste seco: mostra os 3 que seriam escolhidos; não grava nada
 //      node scripts/morte-subita/fase1.mjs --buscar [--rodada R]   grava fila-entrada/fase1-candidatos.json (3 escolhidos + reservas)
+//      node scripts/morte-subita/fase1.mjs --selecionar id1,id2,id3 --rodada R   grava a lista aprovada em
+//                                                                   fila-entrada/selecionados.json (ids precisam estar entre os
+//                                                                   candidatos desta rodada; máx. 3). Não baixa nada.
 //      node scripts/morte-subita/fase1.mjs --preparar id1,id2,id3 --rodada R   grava os ids em logs/processados.txt, baixa e
 //                                                                   transcreve em fila-entrada/ (fila-entrada/fase1.json = resultado)
 //      node scripts/morte-subita/fase1.mjs --auto --rodada R       retoma entradas incompletas + --buscar + --preparar dos 3
+// --preparar (e --auto) seguram fila-entrada/.preparar.lock (pid + rodada): uma 2ª execução enquanto a 1ª está viva é
+// recusada na hora (código 3, nada é baixado nem gravado); trava de processo morto é retomada.
 // Opções: --quantos 3, --max-verificar 200 (vídeos extraídos por completo até achar os 3), --por-busca 200
 import fs from 'node:fs';
 import path from 'node:path';
@@ -30,6 +38,9 @@ const BUSCAS = ['GTA 6', 'GTA VI'];
 const F_CANDIDATOS = path.join(FILA_ENTRADA, 'fase1-candidatos.json');
 const F_RESULTADO = path.join(FILA_ENTRADA, 'fase1.json');
 export const F_EVENTO = path.join(FILA_ENTRADA, 'evento-fase1-sucesso.json');
+export const F_SELECIONADOS = path.join(FILA_ENTRADA, 'selecionados.json');
+const F_TRAVA_PREPARO = path.join(FILA_ENTRADA, '.preparar.lock');
+const SAIDA_DUPLICADA = 3;
 
 // janela de 6 meses, igual ao --dateafter today-6months do yt-dlp
 const limite = new Date();
@@ -96,7 +107,65 @@ export async function buscar() {
 
 const semInfo = ({_info, ...c}) => c;
 
+class Duplicada extends Error {}
+const vivo = (pid) => {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+};
+// trava exclusiva do preparo (criação atômica com 'wx'): só um --preparar/--auto por vez na máquina
+function travarPreparo() {
+  fs.mkdirSync(FILA_ENTRADA, {recursive: true});
+  for (let tentativa = 0; tentativa < 2; tentativa++) {
+    try {
+      const fd = fs.openSync(F_TRAVA_PREPARO, 'wx');
+      fs.writeSync(fd, JSON.stringify({pid: process.pid, rodada: RODADA, inicio: new Date().toISOString()}));
+      fs.closeSync(fd);
+      const soltar = () => {
+        try { if (lerJson(F_TRAVA_PREPARO, {}).pid === process.pid) fs.rmSync(F_TRAVA_PREPARO, {force: true}); } catch {}
+      };
+      process.on('exit', soltar);
+      return soltar;
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+      const t = lerJson(F_TRAVA_PREPARO, {});
+      const recente = Date.now() - fs.statSync(F_TRAVA_PREPARO).mtimeMs < 10e3; // sendo escrita agora por outro processo
+      if (vivo(t.pid) || (!t.pid && recente)) {
+        throw new Duplicada(`já há um --preparar em andamento (pid ${t.pid ?? '?'}, rodada ${t.rodada ?? '?'}, desde ${t.inicio ?? '?'}); execução duplicada recusada`);
+      }
+      log(`[fase1] trava de preparo abandonada (pid ${t.pid ?? '?'} morto): retomada`);
+      fs.rmSync(F_TRAVA_PREPARO, {force: true});
+    }
+  }
+  throw new Duplicada('não consegui pegar fila-entrada/.preparar.lock');
+}
+
+// lista aprovada pela Fase 1 (claude-free): só ids que o --buscar desta rodada devolveu, sem repetição, no máximo 3
+function selecionar(ids, cand) {
+  if (!cand) throw new Error('fila-entrada/fase1-candidatos.json não existe: rode --buscar antes');
+  if (cand.rodada !== RODADA) throw new Error(`os candidatos são da rodada ${cand.rodada}, não de ${RODADA}: rode --buscar de novo`);
+  const todos = [...(cand.selecionados || []), ...(cand.reservas || [])];
+  const unicos = [...new Set(ids)];
+  if (unicos.length > QUANTOS) throw new Error(`no máximo ${QUANTOS} ids`);
+  const fora = unicos.filter((id) => !todos.some((c) => c.id === id));
+  if (fora.length) throw new Error(`ids fora dos candidatos desta rodada: ${fora.join(', ')}`);
+  const doc = {rodada: RODADA, gerado_em: new Date().toISOString(), ids: unicos, videos: unicos.map((id) => semInfo(todos.find((c) => c.id === id)))};
+  const tmp = `${F_SELECIONADOS}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(doc, null, 2));
+  fs.renameSync(tmp, F_SELECIONADOS);
+  log(`[fase1] seleção gravada (${RODADA}): ${unicos.join(', ')}`);
+  return doc;
+}
+
 async function preparar(ids, candidatos) {
+  const soltar = travarPreparo(); // antes de qualquer gravação: a duplicada não toca em nada
+  try {
+    return await prepararTravado(ids, candidatos);
+  } finally {
+    soltar();
+  }
+}
+
+async function prepararTravado(ids, candidatos) {
   const doc = {rodada: RODADA, inicio: new Date().toISOString(), status: 'preparando', selecionados: [], preparados: [], falhas: []};
   const gravar = () => fs.writeFileSync(F_RESULTADO, JSON.stringify(doc, null, 2));
   const todos = [...(candidatos?.selecionados || []), ...(candidatos?.reservas || [])];
@@ -162,6 +231,10 @@ try {
     fs.writeFileSync(F_CANDIDATOS, JSON.stringify(c, null, 2));
     if (!c.selecionados.length) semSelecao(c);
     console.log(JSON.stringify({...resumo(c), gravado: F_CANDIDATOS}, null, 2));
+  } else if (a.includes('--selecionar')) {
+    const ids = String(opt('--selecionar', '')).split(',').map((s) => s.trim()).filter(Boolean);
+    if (!ids.length) throw new Error('--selecionar precisa de ids separados por vírgula');
+    console.log(JSON.stringify({ok: true, gravado: F_SELECIONADOS, ...selecionar(ids, lerJson(F_CANDIDATOS, null))}, null, 2));
   } else if (a.includes('--preparar')) {
     const ids = String(opt('--preparar', '')).split(',').map((s) => s.trim()).filter(Boolean).slice(0, QUANTOS);
     if (!ids.length) throw new Error('--preparar precisa de ids separados por vírgula');
@@ -174,11 +247,11 @@ try {
     const doc = c.selecionados.length ? await preparar(c.selecionados.map((x) => x.id), c) : semSelecao(c);
     console.log(JSON.stringify({...doc, retomados}, null, 2));
   } else {
-    console.error('Uso: fase1.mjs --teste | --buscar | --preparar id1,id2 --rodada R | --auto --rodada R');
+    console.error('Uso: fase1.mjs --teste | --buscar | --selecionar id1,id2 --rodada R | --preparar id1,id2 --rodada R | --auto --rodada R');
     process.exit(1);
   }
 } catch (e) {
-  log(`[fase1] erro: ${e.message}`);
-  console.log(JSON.stringify({ok: false, erro: e.message}));
-  process.exit(1);
+  log(`[fase1] ${e instanceof Duplicada ? 'recusado' : 'erro'}: ${e.message}`);
+  console.log(JSON.stringify({ok: false, duplicada: e instanceof Duplicada || undefined, erro: e.message}));
+  process.exit(e instanceof Duplicada ? SAIDA_DUPLICADA : 1);
 }
