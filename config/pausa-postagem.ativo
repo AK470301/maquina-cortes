@@ -1,0 +1,3 @@
+Pausa de postagens ativada em 2026-11-18T12:27:35-03:00 a pedido do usuario (risco de bloqueio por spam no YouTube).
+Enquanto este arquivo existir, publicar.mjs e agendar.mjs nao enviam nem agendam nada.
+Para retomar: apague este arquivo (ou peca ao Claude: "retome as postagens").

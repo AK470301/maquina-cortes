@@ -41,11 +41,6 @@
     "antecedencia_min": 30,
     "dias_max": 30
   },
-  "_agenda": "Itens aprovados sem agendado_para recebem o próximo horário livre (agendar.mjs, chamado pelo publicar.mjs): até por_dia vídeos por plataforma por dia nos horarios (BRT), o compilado no horario_longo; o excedente vai para o dia seguinte. Considera ocupados os posts já agendados na Zernio e os postagem.json do projeto.",
-  "ao_vivo": {
-    "intervalo_min": 25,
-    "folga_min": 20,
-    "por_dia": 4
-  },
-  "_ao_vivo": "Envio imediato (item \"ao_vivo\": true do radar, ou publicar.mjs --agora): o primeiro sai na hora se não houve outro envio imediato nos últimos folga_min; cada um dos seguintes é agendado intervalo_min depois do anterior; no máximo por_dia por dia (o excedente vai para os horários de pico com --agendar, ou sai com --acima-do-teto)."
+  "_agenda": "OBSOLETO desde 2026-11-18: os horários de pico fixos foram substituídos pelo algoritmo de config/postagem.json (agenda-postagens.mjs). Mantido só como referência.",
+  "_ao_vivo": "REMOVIDO em 2026-11-18: o envio imediato do radar não existe mais. Todo agendamento segue config/postagem.json (agenda-postagens.mjs)."
 }

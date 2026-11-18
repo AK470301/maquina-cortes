@@ -30,6 +30,7 @@ fila/
 notificados.json
 postado.json
 postagem.json
+!config/postagem.json
 banco-compilado/segmentos.json
 
 # Gerado pelo setup.mjs do motor ao instalar o whisper (a instalação aponta para dentro do repositório)

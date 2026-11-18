@@ -46,7 +46,7 @@
 // Saída: para-postar/LIVE--<canal>--<AAAAMMDD-HHMMSS>.mp4 e um item em cortes/ao-vivo-<canal>/postagem.json com
 // "ao_vivo": true e "aprovado": false; em seguida chama o notificar-email.mjs.
 //
-// O radar NUNCA publica. O item só sai com o OK do usuário (publicar.mjs), e aí sai na hora por ser "ao_vivo".
+// O radar NUNCA publica. O item só sai com o OK do usuário (publicar.mjs), no horário do algoritmo de config/postagem.json.
 // Autorização: canal de streamer "proibido" no autorizacoes.json é recusado; sem autorização registrada, o item nasce
 // com "sem_autorizacao": true (pede o OK extra). Música licenciada audível no trecho ⇒ descarte o corte na revisão.
 import {spawn, spawnSync} from 'node:child_process';

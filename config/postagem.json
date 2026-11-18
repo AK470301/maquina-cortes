@@ -1,0 +1,15 @@
+{
+  "_sobre": "Regras de agendamento de postagens (agenda-postagens.mjs, usado pelo publicar.mjs e pelo agendar.mjs). Definidas pelo usuário em 2026-11-18 para evitar bloqueio de spam (0 views) no YouTube. Um 'vídeo' = um corte: as duas plataformas do mesmo corte (TikTok + Shorts) saem no mesmo horário e contam como 1.",
+  "limite_dia": 5,
+  "_limite_dia": "máximo absoluto de cortes por dia, contando os já postados e os já agendados naquela data",
+  "janela_inicio": "07:30",
+  "janela_fim": "21:30",
+  "espaco_min": 120,
+  "_espaco_min": "intervalo mínimo entre dois cortes consecutivos, inclusive do último de um dia para o primeiro do dia seguinte, depois do sorteio",
+  "variacao_min": 15,
+  "_variacao_min": "desvio aleatório inteiro e uniforme de -variacao_min a +variacao_min minutos somado a cada horário-base",
+  "fuso": "-03:00",
+  "antecedencia_min": 16,
+  "_antecedencia_min": "folga mínima entre agora e o primeiro horário (a Zernio exige agendamento ao menos 15 min no futuro para dar tempo do upload)",
+  "dias_max": 60
+}

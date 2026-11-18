@@ -28,6 +28,9 @@ export function config() {
 // Nele a única restrição de conteúdo é o idioma português: sem trava de criador (autorização), tema ou spoiler.
 export const ARQUIVO_MORTE_SUBITA = path.join(RAIZ, 'config', 'morte-subita.ativo');
 export const morteSubita = () => fs.existsSync(ARQUIVO_MORTE_SUBITA);
+// pausa de postagens: enquanto config/pausa-postagem.ativo existir, publicar.mjs e agendar.mjs não enviam nem agendam nada
+export const ARQUIVO_PAUSA = path.join(RAIZ, 'config', 'pausa-postagem.ativo');
+export const pausaPostagem = () => fs.existsSync(ARQUIVO_PAUSA);
 
 export const lerJson =(f, padrao) => (fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : padrao);
 

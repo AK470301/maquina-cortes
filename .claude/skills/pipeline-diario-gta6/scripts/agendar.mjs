@@ -1,114 +1,47 @@
 #!/usr/bin/env node
-// Preenche o "agendado_para" dos itens aprovados que estão sem horário, nos horários de pico (pipeline.config.json →
-// "agenda"): por padrão 12:00, 18:00 e 21:00 BRT, no máximo 3 por dia por plataforma (TikTok e Shorts), e o compilado
-// 16:9 às 20:00 (1 por dia). Não encavala: considera ocupados os posts já agendados na Zernio e os itens aprovados com
-// horário em todos os postagem.json do projeto (cortes/*/ e compilados/*/). O que não cabe no dia vai para o seguinte.
-// Ordem: maior "nota" primeiro; dois itens com o mesmo "assunto" não caem no mesmo dia da mesma plataforma.
-// Item com "publicar_agora": true não é tocado (sai na hora). Item com horário manual é respeitado.
+// Preenche o "agendado_para" dos itens aprovados e ainda não enviados de um postagem.json com o algoritmo central de
+// agenda-postagens.mjs (regras em config/postagem.json: até 5 cortes/dia, janela 07:30–21:30, mínimo 2 h entre cortes,
+// distribuição proporcional nas horas restantes + sorteio de ±15 min). Desde 2026-11-18 substitui os horários de pico
+// fixos (12:00/18:00/21:00) e o envio imediato do radar: TODO item passa por aqui, inclusive "ao_vivo"/"publicar_agora".
+// O horário de quem ainda não foi enviado é sempre recalculado (um agendado_para manual não fura as regras).
+// As plataformas do mesmo corte (mesmo id) recebem o mesmo horário e contam como 1 corte no dia.
+// Com config/pausa-postagem.ativo, só calcula (não grava).
 // Uso: node agendar.mjs <postagem.json> [--so id1,id2] [--teste]   (--teste mostra a proposta sem gravar)
-// Como módulo: preencherHorarios(arquivo, itens, {gravar}) — o publicar.mjs chama antes de enviar.
-import fs from 'node:fs';
-import path from 'node:path';
-import {fileURLToPath} from 'node:url';
-import {RAIZ, carregarEnv, config, lerJson, salvarItens} from './env.mjs';
-import {postsAgendadosZernio} from './zernio.mjs';
+// Como módulo: preencherHorarios(arquivo, itens, {so, gravar, registro}) — o publicar.mjs chama antes de enviar.
+import fs from "node:fs";
+import path from "node:path";
+import {fileURLToPath} from "node:url";
+import {carregarEnv, config, lerJson, pausaPostagem, salvarItens} from "./env.mjs";
+import {distribuir, isoNoFuso, ocupacao, regras} from "./agenda-postagens.mjs";
 
-const PADRAO = {horarios: ['12:00', '18:00', '21:00'], horario_longo: '20:00', fuso: '-03:00', por_dia: {tiktok: 3, youtube_short: 3, youtube_longo: 1}, antecedencia_min: 30, dias_max: 30};
-
+// compatibilidade: o fuso da agenda (config/postagem.json)
 export function agendaConfig() {
-  const a = config().agenda || {};
-  return {...PADRAO, ...a, por_dia: {...PADRAO.por_dia, ...(a.por_dia || {})}};
+  return {...(config().agenda || {}), fuso: regras().fuso};
 }
 
-// relógio no fuso da agenda ("-03:00"): "YYYY-MM-DD" e "HH:MM"
-const offsetMin = (fuso) => {
-  const [, s, h, m] = /([+-])(\d{2}):(\d{2})/.exec(fuso);
-  return (s === '-' ? -1 : 1) * (Number(h) * 60 + Number(m));
-};
-const noFuso = (ms, fuso) => new Date(ms + offsetMin(fuso) * 60e3).toISOString();
-const diaNoFuso = (ms, fuso) => noFuso(ms, fuso).slice(0, 10);
-const horaNoFuso = (ms, fuso) => noFuso(ms, fuso).slice(11, 16);
-const somaDias = (dia, n) => new Date(Date.parse(`${dia}T12:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
-const horariosDe = (plat, ag) => (plat === 'youtube_longo' ? [ag.horario_longo] : ag.horarios);
-const aprovadoDeVerdade = (it) => it.aprovado && (!it.sem_autorizacao || it.aprovado_sem_autorizacao);
-
-// todos os postagem.json do projeto
-function arquivosPostagem() {
-  const out = [];
-  for (const pasta of ['cortes', 'compilados']) {
-    const dir = path.join(RAIZ, pasta);
-    if (!fs.existsSync(dir)) continue;
-    for (const d of fs.readdirSync(dir)) {
-      const f = path.join(dir, d, 'postagem.json');
-      if (fs.existsSync(f)) out.push(f);
-    }
-  }
-  return out;
-}
-
-async function ocupacao(ag, arquivoAtual, itensAtuais) {
-  const ocup = []; // {plataforma, quando, assunto}
-  const avisos = [];
-  if ((config().publicador || '') === 'zernio') {
-    const z = await postsAgendadosZernio();
-    if (z.erro) avisos.push(`Zernio: ${z.erro} (sigo só com a ocupação local)`);
-    for (const p of z.posts) {
-      let plataforma = p.plataforma;
-      // a Zernio não separa Short de vídeo longo: o horário do longo identifica o compilado
-      if (plataforma === 'youtube') plataforma = horaNoFuso(p.quando, ag.fuso) === ag.horario_longo ? 'youtube_longo' : 'youtube_short';
-      ocup.push({plataforma, quando: p.quando, assunto: null});
-    }
-  }
-  const atual = path.resolve(arquivoAtual);
-  for (const f of arquivosPostagem()) {
-    const itens = path.resolve(f) === atual ? itensAtuais : lerJson(f, {itens: []}).itens || [];
-    for (const it of itens) if (it.agendado_para && aprovadoDeVerdade(it)) ocup.push({plataforma: it.plataforma, quando: Date.parse(it.agendado_para), assunto: it.assunto || null});
-  }
-  // o mesmo post aparece na Zernio e no postagem.json local: conta uma vez (fica o registro local, que tem o assunto)
-  const unicos = new Map();
-  for (const o of ocup) {
-    const k = `${o.plataforma}|${Math.round(o.quando / 60e3)}`;
-    if (!unicos.has(k) || o.assunto) unicos.set(k, o);
-  }
-  return {ocup: [...unicos.values()], avisos};
-}
+const aprovadoDeVerdade = (it) => it.aprovado && !it.descartado && (!it.sem_autorizacao || it.aprovado_sem_autorizacao);
 
 export async function preencherHorarios(arquivo, itens, {so = null, gravar = true, registro = {}} = {}) {
-  const ag = agendaConfig();
-  const alvo = itens
-    .filter((it) => (!so || so.has(it.id)) && aprovadoDeVerdade(it) && !it.agendado_para && !it.publicar_agora && !registro[`${it.id}:${it.plataforma}`]?.ok)
-    .sort((a, b) => (b.nota ?? 0) - (a.nota ?? 0));
+  const pasta = path.basename(path.dirname(path.resolve(arquivo)));
+  const alvo = itens.filter((it) => (!so || so.has(it.id)) && aprovadoDeVerdade(it) && !registro[`${it.id}:${it.plataforma}`]?.ok);
   if (!alvo.length) return {atribuidos: [], avisos: []};
-  const {ocup, avisos} = await ocupacao(ag, arquivo, itens);
-  const minimo = Date.now() + ag.antecedencia_min * 60e3;
-  const hoje = diaNoFuso(Date.now(), ag.fuso);
+  // ordem: maior "nota" primeiro; empate = ordem do arquivo
+  const ids = [...new Set(alvo.map((it) => it.id))];
+  const nota = (id) => Math.max(...alvo.filter((it) => it.id === id).map((it) => it.nota ?? 0));
+  ids.sort((a, b) => nota(b) - nota(a));
+  const {tempos, avisos, regras: r} = await ocupacao({ignorar: new Set(ids.map((id) => `${pasta}|${id}`))});
+  const slots = distribuir(ids.length, tempos, {r});
   const atribuidos = [];
-  for (const it of alvo) {
-    const limite = ag.por_dia[it.plataforma] ?? 3;
-    let feito = null;
-    for (let n = 0; n < ag.dias_max && !feito; n++) {
-      const dia = somaDias(hoje, n);
-      const doDia = ocup.filter((o) => o.plataforma === it.plataforma && diaNoFuso(o.quando, ag.fuso) === dia);
-      if (doDia.length >= limite) continue;
-      if (it.assunto && doDia.some((o) => o.assunto && o.assunto === it.assunto)) continue;
-      for (const h of horariosDe(it.plataforma, ag)) {
-        const iso = `${dia}T${h}:00${ag.fuso}`;
-        const ms = Date.parse(iso);
-        if (ms < minimo) continue;
-        if (ocup.some((o) => o.plataforma === it.plataforma && Math.abs(o.quando - ms) < 60e3)) continue;
-        feito = iso;
-        break;
-      }
+  ids.forEach((id, k) => {
+    const s = slots[k];
+    for (const it of alvo.filter((x) => x.id === id)) {
+      it.publicar_agora = false;
+      it.agendado_para = s ? isoNoFuso(s.quando, r.fuso) : "";
+      if (s) atribuidos.push({id, plataforma: it.plataforma, agendado_para: it.agendado_para, desvio_min: s.desvio_min, ajustes: s.ajustes});
     }
-    if (!feito) {
-      avisos.push(`[${it.id}] sem horário livre nos próximos ${ag.dias_max} dias`);
-      continue;
-    }
-    it.agendado_para = feito;
-    ocup.push({plataforma: it.plataforma, quando: Date.parse(feito), assunto: it.assunto || null});
-    atribuidos.push({id: it.id, plataforma: it.plataforma, agendado_para: feito});
-  }
-  if (gravar && atribuidos.length) salvarItens(arquivo, itens);
+    if (!s) avisos.push(`[${id}] sem vaga nos próximos ${r.dias_max} dias`);
+  });
+  if (gravar && !pausaPostagem() && atribuidos.length) salvarItens(arquivo, itens);
   return {atribuidos, avisos};
 }
 
@@ -125,5 +58,5 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const doc = JSON.parse(fs.readFileSync(arquivo, 'utf8'));
   const registro = lerJson(path.join(path.dirname(path.resolve(arquivo)), 'postado.json'), {});
   const r = await preencherHorarios(arquivo, doc.itens || [], {so, gravar: !args.includes('--teste'), registro});
-  console.log(JSON.stringify({gravado: !args.includes('--teste'), ...r}, null, 2));
+  console.log(JSON.stringify({gravado: !args.includes("--teste") && !pausaPostagem(), pausa: pausaPostagem(), ...r}, null, 2));
 }

@@ -75,23 +75,6 @@ node $S/publicar.mjs cortes/ao-vivo-<canal>/postagem.json --teste --so <id>   # 
 node $S/publicar.mjs cortes/ao-vivo-<canal>/postagem.json --so <id>           # envia
 ```
 
-Item `ao_vivo: true` é **envio imediato**: não entra na fila das 12:00, 18:00 e 21:00 nem conta para o limite de 3 por dia dela. O mesmo vale para qualquer item de outro `postagem.json` quando o usuário pedir para postar já: acrescente `--agora` (com `--so`, só para os ids pedidos).
+**Desde 2026-11-18 não existe envio imediato.** Item `ao_vivo: true` segue as mesmas regras de qualquer corte (algoritmo de `$S/agenda-postagens.mjs`, regras em `R/config/postagem.json`): até **5 cortes por dia** no total do projeto, só entre **07:30 e 21:30**, mínimo **2 h** entre cortes, distribuição proporcional nas horas restantes + sorteio de **±15 min**; o que não cabe vai para o dia seguinte. `--agora`, `--acima-do-teto` e `--sem-escalonamento` foram removidos (o `publicar.mjs` os recusa), e `scripts/auto-postar-live.mjs` está desativado. O `--teste` mostra em `horarios_preenchidos` o horário calculado de cada id: inclua-o na tabela antes de pedir o OK, avisando que o clipe da live só vai ao ar nesse horário. Com `R/config/pausa-postagem.ativo` nada é enviado (código 4).
 
-**Escalonamento (trava anti-spam).** Vários envios imediatos nunca saem no mesmo segundo (`R/pipeline.config.json` → `ao_vivo`):
-
-- O **primeiro** aprovado sai na hora (`publishNow`), desde que não tenha havido outro envio imediato nos últimos **20 min**. Se houve (ou se ainda há um escalonado por sair), ele entra na sequência: 25 min depois do último, e nunca a menos de 16 min de agora.
-- Cada um dos **seguintes** da mesma rodada é agendado na Zernio **25 min** depois do anterior (agora, +25, +50…), na ordem em que estão no `postagem.json`.
-- **Teto de 4 envios imediatos por dia**, contando o que já saiu em todos os `postado.json` do projeto. Se a rodada passar disso, o `publicar.mjs` não envia nada e diz quais ids não couberam.
-
-O `--teste` mostra o resultado em `escalonamento` (id, horário e minutos a partir de agora): inclua esses horários na tabela antes de pedir o OK. Quando passar do teto, mostre ao usuário os ids que sobraram e ofereça as duas saídas:
-
-```bash
-# mandar o excedente para os horários de pico dos próximos dias (o item deixa de ser urgente: "ao_vivo": false)
-node $S/publicar.mjs cortes/ao-vivo-<canal>/postagem.json --agendar <id1>,<id2>
-# ou, só com o OK explícito do usuário para passar do teto naquele dia
-node $S/publicar.mjs cortes/ao-vivo-<canal>/postagem.json --acima-do-teto
-```
-
-O `--agendar` não aprova nada: o item continua precisando de `aprovado: true`. Ele vale também para escolher de antemão quais clipes do radar ficam para a fila normal quando houver mais momentos bons do que cabem no dia.
-
-O radar nunca publica, e a rodada automática (`PIPELINE_HEADLESS=1`) continua bloqueada no `publicar.mjs`, com ou sem `--agora`. Enviado com sucesso, o vídeo vai de `para-postar/` para `postados/`.
+O radar nunca publica, e a rodada automática (`PIPELINE_HEADLESS=1`) continua bloqueada no `publicar.mjs`, Enviado com sucesso, o vídeo vai de `para-postar/` para `postados/`.

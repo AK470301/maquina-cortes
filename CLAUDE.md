@@ -25,6 +25,8 @@ node $M/preparar.mjs <url> [--origem link] | --retomar   # download + transcribe
 node $M/fase2.mjs listar | iniciar <slug> | finalizar <slug>
 node $M/alerta-email.mjs clipes <cortes/slug> | cron --rodada R --hora HH:MM --status ok|vazio|erro   [--simular]
 node $M/idioma.mjs <info.json>                      # is this yt-dlp JSON in Portuguese?
+node .claude/skills/pipeline-diario-gta6/scripts/agenda-postagens.mjs --simular 8 [--vazio]   # posting schedule dry run
+node .claude/skills/pipeline-diario-gta6/scripts/publicar.mjs <postagem.json> --teste [--so id]  # times + payload, no send (only mode while paused)
 node scripts/radar-ao-vivo.mjs --canais coringa,kick:coringa,yt:UCxxxxxxxxxxxxxxxxxxxxxx   # live radar
 ```
 
@@ -64,7 +66,22 @@ Unchanged mechanics (streamlink recording, spike → 40 s clip, whisper, ffmpeg 
 - `plano.mjs` under Morte Súbita (`env.mjs` → `morteSubita()`): skips the `proibido` error, the "no #gta6 on non-GTA-6 cut" rule and the spoiler warning; adds a non-blocking "sem autorização" warning. Everything technical (fields, durations from `modo.mjs` preset `crescimento` = 20–55 s, hook ≤ 1 s, layout routing, `musica_licenciada`, overlap) still blocks. `sobre_gta6` is still required: it only picks the B-roll background (`papo` + true → `assets/broll-gta6/` bottom; false → layout `cheia`).
 - **No TTS narration** (removed on purpose; `arquivo/narracao-tts/` is reference only). The hook is the top-screen title (≤ 6 words, 3 s, impact + whoosh from `assets/sfx/`).
 - **B-roll** only from `assets/broll-gta6/` (muted; currently official trailer cuts as placeholder). No Pexels, no third-party gameplay as background.
-- **Never publish without the user's OK.** Publishing (`publicar.mjs` → Zernio, peak slots via `agendar.mjs`, live immediate-send stagger) is unchanged and only happens in an interactive session after explicit approval; see the `pipeline-diario-gta6` skill, step 9, for the approval/publish procedure. `.claude/headless-settings.json` (used by both phases) allows node/ffmpeg/yt-dlp/cd/file tools and denies `rm`, `curl`, `git push`, the engine publisher and WebFetch.
+- **Never publish without the user's OK.** Publishing (`publicar.mjs` → Zernio, times from the central scheduler below) only happens in an interactive session after explicit approval; see the `pipeline-diario-gta6` skill, step 9, for the approval/publish procedure. `.claude/headless-settings.json` (used by both phases) allows node/ffmpeg/yt-dlp/cd/file tools and denies `rm`, `curl`, `git push`, the engine publisher and WebFetch.
+
+## Posting: pause and scheduling rules (since 2026-11-18, to avoid YouTube spam blocking / 0 views)
+
+**Pause.** While `config/pausa-postagem.ativo` exists, nothing is published or scheduled on any platform: `publicar.mjs` refuses every non-`--teste` run (exit 4) and `agendar.mjs` computes but never writes times. Collection, the radar, Phase 2 and rendering keep running; clips pile up in `para-postar/` / `render/`. Only the user pauses or resumes:
+- **Pause:** create the file (any content; the current one says why/when). Then, if the user asks to clear the queue: delete the posts still `scheduled` in Zernio (`DELETE /posts/<id>`), move their records from `postado.json` to `postado-cancelado.json`, clear `agendado_para` in `postagem.json` (keep `aprovado`, set `reagendar: true`) and move the video from `postados/` back to `para-postar/`. Never touch `render/`.
+- **Resume:** delete the file (only on the user's explicit "retome as postagens" or equivalent), then `publicar.mjs <postagem.json> --teste` to show the recomputed times, and the real run after the OK. Approved items with `reagendar: true` are rescheduled from zero by the algorithm.
+- On 2026-11-18 12:28 the pause was created and the queue cleared: 6 Zernio posts deleted (davy-jones VOD `c-04-30-fps` and `c-03-viradinha-carro`, gameplayrj `c-02-pc-vice-city`, TikTok + Shorts each); JSON backup in `backup-pre-pausa-postagem/` (git-ignored).
+
+**Central scheduler** — `.claude/skills/pipeline-diario-gta6/scripts/agenda-postagens.mjs`, rules in `config/postagem.json` (tracked despite the `postagem.json` ignore rule). `agendar.mjs` → `preencherHorarios` uses it and `publicar.mjs` calls that for **every** send (manual approval, radar clips, compilations); the old fixed peak slots (12/18/21 h) and the radar's immediate send/stagger are gone (`--agora`, `--acima-do-teto`, `--sem-escalonamento` are refused; `scripts/auto-postar-live.mjs` is disabled; `pipeline.config.json` `agenda`/`ao_vivo` are obsolete). Unit = one cut: both platforms of a cut share the time and count once.
+- ≤ **5 cuts per day**, counting posted + scheduled (all `postado.json` except `cancelado`, approved items with `agendado_para`, Zernio `scheduled` posts, deduplicated).
+- Window **07:30–21:30** (`fuso` −03:00); first slot ≥ now + 16 min (Zernio needs ≥ 15 min for a scheduled upload).
+- For day D: `T_inicio = max(now+16 min, 07:30 D, last post up to 23:30 D + 120 min)`, `R = 21:30 D − T_inicio`; R < 0 or 5 already on D → D+1. `K = min(remaining, free slots, max(1, ⌊R / 150⌋))` — the step must be ≥ 120 + 2×15 min, otherwise the 2 h lock cancels the jitter and slots come out exactly 120 min apart (a regular pattern; found in the 2026-11-18 dry run, a 522-min afternoon now takes 3 cuts, a full 840-min day still takes 5). `passo = R / K`, `base_i = T_inicio + i·passo`, plus a uniform integer jitter in [−15, +15] min.
+- Hard locks after the jitter: ≥ 07:30 and ≥ now+16; ≥ previous + 120 min (otherwise pushed to previous + 120), also across days; ≤ 21:30 — if the 2 h push would pass 21:30, that cut and the next ones go to D+1, recomputed over the full window. The time of every approved, unsent item is recomputed on each run (a manual `agendado_para` can't break the rules).
+- Zernio schedules natively (`scheduledFor`); there is no local queue/cron for posting.
+- Dry run: `node .claude/skills/pipeline-diario-gta6/scripts/agenda-postagens.mjs --simular <N> [--vazio]` (table of date, time, base, jitter, lock adjustments, interval, n-th of the day; `--vazio` ignores real occupancy). Validated with 2 × 20 000 random scenarios (0 violations).
 
 ## Deactivating Modo Morte Súbita (only on the user's explicit command)
 
